@@ -10,6 +10,7 @@ python = "^3.10"
 xarray = "^2024.5.0"
 dask = "^2024.5.2"
 pyinverse = {git = "git@github.com:ATMO-IUP-UHEI/pyinverse.git"}
+tqdm = "^4.66.4"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"
