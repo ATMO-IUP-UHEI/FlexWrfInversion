@@ -121,40 +121,44 @@ class TargetLoaderTotalInCity(TargetLoader):
             )
 
             self._target_with_additional_sectors = (
-                xr.merge(
-                    [
-                        xr.concat(
-                            [
-                                true_emissions_city.assign_coords(
-                                    subsector=true_emissions_city.group.values
-                                ),
-                                true_emissions_germany.assign_coords(
-                                    subsector=true_emissions_germany.group.values
-                                ),
-                            ],
-                            dim="subsector",
-                        ),
-                        xr.concat(
-                            [
-                                true_emissions_sums_city.assign_coords(
-                                    subsector=true_emissions_sums_city.group.values
-                                ),
-                                true_emissions_sums_germany.assign_coords(
-                                    subsector=true_emissions_sums_germany.group.values
-                                ),
-                            ],
-                            dim="subsector",
-                        ),
-                    ]
-                )[self.EMISSION_SECTORS_TO_LOAD]
-                .sortby("subsector")
+                (
+                    xr.merge(
+                        [
+                            xr.concat(
+                                [
+                                    true_emissions_city.assign_coords(
+                                        subsector=true_emissions_city.group.values
+                                    ),
+                                    true_emissions_germany.assign_coords(
+                                        subsector=true_emissions_germany.group.values
+                                    ),
+                                ],
+                                dim="subsector",
+                            ),
+                            xr.concat(
+                                [
+                                    true_emissions_sums_city.assign_coords(
+                                        subsector=true_emissions_sums_city.group.values
+                                    ),
+                                    true_emissions_sums_germany.assign_coords(
+                                        subsector=true_emissions_sums_germany.group.values
+                                    ),
+                                ],
+                                dim="subsector",
+                            ),
+                        ]
+                    )[self.EMISSION_SECTORS_TO_LOAD].sortby("subsector")
+                )
+                .stack(state=self.STATE_DIMS)
                 .compute()
             )
-        return self._target_with_additional_sectors.stack(state=self.STATE_DIMS)
+        return self._target_with_additional_sectors
 
     @property
     def target(self) -> xr.DataArray:
-        return self.target_with_additional_sectors[self.TOTAL_EMISSION_KEY]
+        return self.target_with_additional_sectors[self.TOTAL_EMISSION_KEY].astype(
+            np.float32
+        )
 
     def load_timeframe(
         self, start_time: np.datetime64, end_time: np.datetime64

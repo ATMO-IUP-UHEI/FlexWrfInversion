@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from flexwrfinversion.loaders.footprint import LoadFootprintForTotalInCity
@@ -44,5 +45,5 @@ class Test_ConstantNoCorrelation:
         )
         assert covariance is not None
         assert covariance.shape == (5, 5)
-        assert covariance.max() == (ppm_error * 1e-6) ** 2
+        assert np.allclose(covariance.max(), (ppm_error * 1e-6) ** 2, atol=0)
         assert set(covariance.dims) == {"measurement0", "measurement1"}

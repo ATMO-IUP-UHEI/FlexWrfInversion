@@ -48,15 +48,23 @@ class ShiftToBiospheric(PriorLoader):
         target_loader: TargetLoaderTotalInCity,
     ):
         self.target_loader = target_loader
+        self._prior = None
 
     @property
     def prior(self) -> xr.DataArray:
-        target_emissions = self.target_loader.target_with_additional_sectors
-        return (
-            target_emissions[self.ANTHROPOGENIC_EMISSION_KEY] / 2
-            + target_emissions[self.BIOGENIC_EMISSION_KEY]
-            + np.abs(target_emissions[self.BIOGENIC_EMISSION_KEY] / 2)
-        ).rename(self.TOTAL_EMISSION_KEY)
+        if self._prior is None:
+            target_emissions = self.target_loader.target_with_additional_sectors
+            self._prior = (
+                (
+                    target_emissions[self.ANTHROPOGENIC_EMISSION_KEY] / 2
+                    + target_emissions[self.BIOGENIC_EMISSION_KEY]
+                    + np.abs(target_emissions[self.BIOGENIC_EMISSION_KEY] / 2)
+                )
+                .rename(self.TOTAL_EMISSION_KEY)
+                .astype(np.float32)
+                .compute()
+            )
+        return self._prior
 
     def load_timeframe(
         self, start_time: np.datetime64, end_time: np.datetime64

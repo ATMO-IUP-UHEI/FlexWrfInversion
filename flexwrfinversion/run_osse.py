@@ -186,12 +186,8 @@ def _run_inversion(
     posterior_std = xr.concat(posterior_std, dim="Time")
     averaging_kernel_diag = xr.concat(averaging_kernel_diag, dim="Time")
     averaging_kernel_sum = xr.concat(averaging_kernel_sum, dim="buffer").mean("buffer")
-    prior = prior_loader.prior.unstack().sel(
-        Time=slice(start_date, end_date - np.timedelta64(1, "h"))
-    )
-    target = target_loader.target.unstack().sel(
-        Time=slice(start_date, end_date - np.timedelta64(1, "h"))
-    )
+    prior = prior_loader.prior.unstack().sel(Time=prior_std.Time.values)
+    target = target_loader.target.unstack().sel(Time=prior_std.Time.values)
 
     inversion_result = xr.merge(
         [

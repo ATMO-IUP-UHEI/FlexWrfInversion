@@ -112,34 +112,37 @@ class LoadFootprintForTotalInCity(FootprintLoader):
             )
 
             self._footprint = (
-                xr.merge(
-                    [
-                        xr.concat(
-                            [
-                                footprints_city.assign_coords(
-                                    subsector=footprints_city.group.values
-                                ),
-                                footprints_germany.assign_coords(
-                                    subsector=footprints_germany.group.values
-                                ),
-                            ],
-                            dim="subsector",
-                        ),
-                        xr.concat(
-                            [
-                                footprints_sums_city.assign_coords(
-                                    subsector=footprints_city.group.values
-                                ),
-                                footprints_sums_germany.assign_coords(
-                                    subsector=footprints_germany.group.values
-                                ),
-                            ],
-                            dim="subsector",
-                        ),
-                    ]
-                )[self.TOTAL_EMISSION_KEY]
-                .sortby("subsector")
-                .stack(state=self.STATE_DIMS, measurement=self.MEASUREMENT_DIMS)
+                (
+                    xr.merge(
+                        [
+                            xr.concat(
+                                [
+                                    footprints_city.assign_coords(
+                                        subsector=footprints_city.group.values
+                                    ),
+                                    footprints_germany.assign_coords(
+                                        subsector=footprints_germany.group.values
+                                    ),
+                                ],
+                                dim="subsector",
+                            ),
+                            xr.concat(
+                                [
+                                    footprints_sums_city.assign_coords(
+                                        subsector=footprints_city.group.values
+                                    ),
+                                    footprints_sums_germany.assign_coords(
+                                        subsector=footprints_germany.group.values
+                                    ),
+                                ],
+                                dim="subsector",
+                            ),
+                        ]
+                    )[self.TOTAL_EMISSION_KEY]
+                    .sortby("subsector")
+                    .stack(state=self.STATE_DIMS, measurement=self.MEASUREMENT_DIMS)
+                )
+                .astype(np.float32)
                 .compute()
             )
         return self._footprint

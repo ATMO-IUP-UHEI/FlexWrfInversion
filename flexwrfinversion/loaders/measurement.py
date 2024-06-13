@@ -93,20 +93,23 @@ class MeasurementFromFile(MeasurementLoader):
             ).drop_dims(["x_stag", "y_stag"])
 
             self._measurements = (
-                xr.merge(
-                    [
-                        true_concentrations_city,
-                        true_concentrations_sums_city,
-                    ],
-                )
-                + xr.merge(
-                    [
-                        true_concentrations_germany,
-                        true_concentrations_sums_germany,
-                    ],
-                )
-            )[self.target_loader.TOTAL_EMISSION_KEY].stack(
-                measurement=self.footprint_loader.MEASUREMENT_DIMS
+                (
+                    xr.merge(
+                        [
+                            true_concentrations_city,
+                            true_concentrations_sums_city,
+                        ],
+                    )
+                    + xr.merge(
+                        [
+                            true_concentrations_germany,
+                            true_concentrations_sums_germany,
+                        ],
+                    )
+                )[self.target_loader.TOTAL_EMISSION_KEY]
+                .stack(measurement=self.footprint_loader.MEASUREMENT_DIMS)
+                .astype(np.float32)
+                .compute()
             )
         return self._measurements
 

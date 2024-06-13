@@ -90,11 +90,11 @@ class RelativeErrorWithSpatialCorrelation(PriorCovarianceLoader):
                         ("subsector0", spatial_coordinate_values),
                         ("subsector1", spatial_coordinate_values),
                     ],
-                )
+                ).compute()
             else:
                 self._spatial_correlation = xr.open_dataarray(
                     self._spatial_correlation_path
-                )
+                ).compute()
         return self._spatial_correlation
 
     def load_timeframe(
@@ -122,10 +122,14 @@ class RelativeErrorWithSpatialCorrelation(PriorCovarianceLoader):
             ],
         )
         return (
-            self._to_two_dimensions(
-                unstacked_prior_std.sel(Time=slice(start_time, end_time)).stack(
-                    state=self.prior_loader.target_loader.STATE_DIMS
+            (
+                self._to_two_dimensions(
+                    unstacked_prior_std.sel(Time=slice(start_time, end_time)).stack(
+                        state=self.prior_loader.target_loader.STATE_DIMS
+                    )
                 )
+                * correlation
             )
-            * correlation
+            .astype(np.float32)
+            .compute()
         )

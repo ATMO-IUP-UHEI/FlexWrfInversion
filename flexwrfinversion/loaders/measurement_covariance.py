@@ -65,4 +65,8 @@ class ConstantNoCorrelation(MeasurementCovarianceLoader):
             * 1e-6,
             coords=measurement_subset.coords,
         )
-        return xr.zeros_like(self._to_two_dimensions(std)) + np.diag(std.data**2)
+        return (
+            (xr.zeros_like(self._to_two_dimensions(std)) + np.diag(std.data**2))
+            .astype(np.float32)
+            .compute()
+        )
