@@ -18,6 +18,12 @@ class TargetLoader(ABC):
         """
         pass
 
+    @property
+    @abstractmethod
+    def STATE_DIMS(self) -> list[str]:
+        """Return the dimensions of the state"""
+        pass
+
     def load_timeframe(
         self, start_time: np.datetime64, end_time: np.datetime64
     ) -> xr.DataArray:
