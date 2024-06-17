@@ -11,7 +11,7 @@ from flexwrfinversion.loaders.target import TargetLoader, TargetLoaderTotalInCit
 class PriorLoader(ABC):
     @abstractmethod
     def __init__(self, target_loader: TargetLoader, *args, **kwargs):
-        pass
+        self.target_loader = target_loader
 
     @property
     @abstractmethod
@@ -47,7 +47,7 @@ class ShiftToBiospheric(PriorLoader):
         self,
         target_loader: TargetLoaderTotalInCity,
     ):
-        self.target_loader = target_loader
+        super().__init__(target_loader)
         self._prior = None
 
     @property
@@ -64,6 +64,36 @@ class ShiftToBiospheric(PriorLoader):
                 .astype(np.float32)
                 .compute()
             )
+        return self._prior
+
+    def load_timeframe(
+        self, start_time: np.datetime64, end_time: np.datetime64
+    ) -> xr.DataArray:
+        return (
+            self.prior.unstack()
+            .sel(Time=slice(start_time, end_time))
+            .stack(state=self.target_loader.STATE_DIMS)
+        )
+
+
+class FlatPrior(PriorLoader):
+    """Class to build a flat prior."""
+
+    def __init__(
+        self,
+        target_loader: TargetLoader,
+        value: float = 0,
+    ):
+        super().__init__(target_loader)
+        self._value = value
+        self._prior = None
+
+    @property
+    def prior(self) -> xr.DataArray:
+        if self._prior is None:
+            self._prior = xr.full_like(
+                self.target_loader.target, self._value, dtype=np.float32
+            ).compute()
         return self._prior
 
     def load_timeframe(

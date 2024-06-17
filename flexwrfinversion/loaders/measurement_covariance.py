@@ -12,7 +12,7 @@ from flexwrfinversion.loaders.measurement import MeasurementFromFile, Measuremen
 class MeasurementCovarianceLoader(ABC):
     @abstractmethod
     def __init__(self, measurement_loader: MeasurementLoader, *args, **kwargs):
-        pass
+        self.measurement_loader = measurement_loader
 
     @abstractmethod
     def load_timeframe(
@@ -46,7 +46,7 @@ class MeasurementCovarianceLoader(ABC):
 
 class ConstantNoCorrelation(MeasurementCovarianceLoader):
     def __init__(self, measurement_loader: MeasurementFromFile, ppm_error: float):
-        self.measurement_loader = measurement_loader
+        super().__init__(measurement_loader)
         self._ppm_error = ppm_error
 
     def load_timeframe(

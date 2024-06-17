@@ -3,7 +3,10 @@ from pathlib import Path
 import pytest
 import xarray as xr
 
-from flexwrfinversion.loaders.target import TargetLoaderTotalInCity
+from flexwrfinversion.loaders.target import (
+    TargetLoaderAnthAndBioSectors,
+    TargetLoaderTotalInCity,
+)
 
 EXAMPLE_DIRECTORY_0 = Path(__file__).parent.parent / "data" / "example_directory_0"
 
@@ -11,6 +14,17 @@ EXAMPLE_DIRECTORY_0 = Path(__file__).parent.parent / "data" / "example_directory
 @pytest.fixture
 def target_loader_total_in_city():
     return TargetLoaderTotalInCity(
+        remapped_data_path=EXAMPLE_DIRECTORY_0 / "remapped_data",
+        season="spring",
+        city="munich",
+        prior_type="true",
+        time_resolution=3,
+    )
+
+
+@pytest.fixture
+def target_loader_anth_and_bio_sectors():
+    return TargetLoaderAnthAndBioSectors(
         remapped_data_path=EXAMPLE_DIRECTORY_0 / "remapped_data",
         season="spring",
         city="munich",
@@ -45,6 +59,31 @@ class Test_TargetLoaderTotalInCity:
         end_time = target["Time"].values[3]
 
         target_timeframe = target_loader_total_in_city.load_timeframe(
+            start_time=start_time,
+            end_time=end_time,
+        )
+
+        assert target_timeframe is not None
+        assert isinstance(target_timeframe, xr.DataArray)
+        assert len(target_timeframe.dims) == 1
+        assert set(target_timeframe.dims) == {"state"}
+
+
+class Test_TargetLoaderAnthAndBioSectors:
+    def test_target(self, target_loader_anth_and_bio_sectors):
+        target = target_loader_anth_and_bio_sectors.target
+        assert target is not None
+        assert isinstance(target, xr.DataArray)
+        assert len(target.dims) == 1
+        assert set(target.dims) == {"state"}
+        assert {"subsector", "Time", "sector"}.issubset(set(target.coords.keys()))
+
+    def test_load_timeframe(self, target_loader_anth_and_bio_sectors):
+        target = target_loader_anth_and_bio_sectors.target
+        start_time = target["Time"].values[0]
+        end_time = target["Time"].values[3]
+
+        target_timeframe = target_loader_anth_and_bio_sectors.load_timeframe(
             start_time=start_time,
             end_time=end_time,
         )

@@ -13,7 +13,7 @@ from flexwrfinversion.loaders.prior import PriorLoader, ShiftToBiospheric
 class PriorCovarianceLoader(ABC):
     @abstractmethod
     def __init__(self, prior_loader: PriorLoader, *args, **kwargs):
-        pass
+        self.prior_loader = prior_loader
 
     @property
     @abstractmethod
@@ -62,7 +62,7 @@ class RelativeErrorWithSpatialCorrelation(PriorCovarianceLoader):
         spatial_correlation_path: str | Path = None,
         relative_error: float = 1,
     ):
-        self.prior_loader = prior_loader
+        super().__init__(prior_loader)
         self._spatial_correlation_path = spatial_correlation_path
         self._relative_error = relative_error
         self._prior_std = None
@@ -132,4 +132,31 @@ class RelativeErrorWithSpatialCorrelation(PriorCovarianceLoader):
             )
             .astype(np.float32)
             .compute()
+        )
+
+
+class TargetAsErrorNoCorrelation(PriorCovarianceLoader):
+    def __init__(
+        self,
+        prior_loader: PriorLoader,
+    ):
+        super().__init__(prior_loader)
+        self._prior_std = None
+
+    @property
+    def prior_std(self) -> xr.DataArray:
+        if self._prior_std is None:
+            self._prior_std = np.abs(self.prior_loader.target_loader.target)
+        return self._prior_std
+
+    def load_timeframe(
+        self, start_time: np.datetime64, end_time: np.datetime64
+    ) -> xr.DataArray:
+        prior_selection = (
+            self.prior_std.unstack()
+            .sel(Time=slice(start_time, end_time))
+            .stack(state=self.prior_loader.target_loader.STATE_DIMS)
+        )
+        return self._to_two_dimensions(prior_selection) * np.eye(
+            prior_selection.shape[0]
         )

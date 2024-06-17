@@ -10,7 +10,11 @@ from flexwrfinversion.loaders.footprint import (
     FootprintLoader,
     LoadFootprintForTotalInCity,
 )
-from flexwrfinversion.loaders.target import TargetLoader, TargetLoaderTotalInCity
+from flexwrfinversion.loaders.target import (
+    TargetLoader,
+    TargetLoaderAnthAndBioSectors,
+    TargetLoaderTotalInCity,
+)
 
 
 class MeasurementLoader(ABC):
@@ -22,7 +26,8 @@ class MeasurementLoader(ABC):
         *args,
         **kwargs,
     ):
-        pass
+        self.target_loader = target_loader
+        self.footprint_loader = footprint_loader
 
     @property
     @abstractmethod
@@ -47,16 +52,19 @@ class MeasurementLoader(ABC):
 
 
 class MeasurementFromFile(MeasurementLoader):
+    TOTAL_EMISSION_KEY = "CO2_TOTAL"
+
     def __init__(
         self,
-        target_loader: TargetLoaderTotalInCity,
+        target_loader: TargetLoaderTotalInCity | TargetLoaderAnthAndBioSectors,
         footprint_loader: LoadFootprintForTotalInCity,
     ):
-        if not isinstance(target_loader, TargetLoaderTotalInCity):
+        if not isinstance(
+            target_loader, (TargetLoaderTotalInCity, TargetLoaderAnthAndBioSectors)
+        ):
             raise ValueError("target must be an instance of TargetLoaderTotalInCity")
 
-        self.target_loader = target_loader
-        self.footprint_loader = footprint_loader
+        super().__init__(target_loader, footprint_loader)
         self._remapped_data_path = target_loader._remapped_data_path
         self._season = target_loader._season
         self._city = target_loader._city
@@ -106,7 +114,7 @@ class MeasurementFromFile(MeasurementLoader):
                             true_concentrations_sums_germany,
                         ],
                     )
-                )[self.target_loader.TOTAL_EMISSION_KEY]
+                )[self.TOTAL_EMISSION_KEY]
                 .stack(measurement=self.footprint_loader.MEASUREMENT_DIMS)
                 .astype(np.float32)
                 .compute()

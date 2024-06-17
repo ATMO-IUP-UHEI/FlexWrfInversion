@@ -40,28 +40,30 @@ from pyinverse.loss import Bayesian
 from pyinverse.solver import BayesianAnalytical
 from tqdm.auto import tqdm
 
-from flexwrfinversion.loaders.footprint import (  # noqa
+# flake8: noqa
+from flexwrfinversion.loaders.footprint import (
     FootprintLoader,
+    LoadFootprintAnthAndBioSectors,
     LoadFootprintForTotalInCity,
 )
-from flexwrfinversion.loaders.measurement import (  # noqa
-    MeasurementFromFile,
-    MeasurementLoader,
-)
-from flexwrfinversion.loaders.measurement_covariance import (  # noqa
+from flexwrfinversion.loaders.measurement import MeasurementFromFile, MeasurementLoader
+from flexwrfinversion.loaders.measurement_covariance import (
     ConstantNoCorrelation,
     MeasurementCovarianceLoader,
 )
-from flexwrfinversion.loaders.prior import PriorLoader, ShiftToBiospheric  # noqa
-from flexwrfinversion.loaders.prior_covariance import (  # noqa
+from flexwrfinversion.loaders.prior import FlatPrior, PriorLoader, ShiftToBiospheric
+from flexwrfinversion.loaders.prior_covariance import (
     PriorCovarianceLoader,
     RelativeErrorWithSpatialCorrelation,
+    TargetAsErrorNoCorrelation,
 )
-from flexwrfinversion.loaders.target import (  # noqa
+from flexwrfinversion.loaders.target import (
     TargetLoader,
+    TargetLoaderAnthAndBioSectors,
     TargetLoaderTotalInCity,
 )
 
+# flake8: noqa
 TIME_BUFFER_FOR_INVERSION_WINDOW = np.timedelta64(24, "h")
 
 
