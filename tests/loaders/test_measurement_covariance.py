@@ -11,7 +11,10 @@ from flexwrfinversion.loaders.measurement import (
     MeasurementFromFile,
     MeasurementFromFileCO,
 )
-from flexwrfinversion.loaders.measurement_covariance import ConstantNoCorrelation
+from flexwrfinversion.loaders.measurement_covariance import (
+    ConstantNoCorrelation,
+    ConstantNoCorrelationCO,
+)
 from flexwrfinversion.loaders.target import (
     TargetLoaderAnthBioCO,
     TargetLoaderTotalInCity,
@@ -90,5 +93,26 @@ class Test_ConstantNoCorrelation:
         assert covariance is not None
         assert covariance.shape == (10, 10)
         assert np.allclose(covariance.max(), 4e-12, atol=0)
+        assert set(covariance.dims) == {"measurement0", "measurement1"}
+        assert set(covariance.unstack().species0.values) == {"CO", "CO2"}
+
+
+class Test_ConstantNoCorrelationCO:
+    def test_load_timeframe(self, measurement_from_file_co):
+        measurements = measurement_from_file_co.measurements
+        start_mtime = measurements.unstack().MTime.values[0]
+        end_mtime = measurements.unstack().MTime.values[4]
+        constant_no_correlation = ConstantNoCorrelationCO(
+            measurement_loader=measurement_from_file_co, ppm_error=2, ppb_error=10
+        )
+        covariance = constant_no_correlation.load_timeframe(
+            start_time=start_mtime, end_time=end_mtime
+        )
+        assert covariance is not None
+        assert covariance.shape == (10, 10)
+        assert np.allclose(covariance.max(), 4e-12, atol=0)
+        assert np.allclose(
+            covariance.where(covariance.species0 == "CO").max(), 1e-16, atol=0
+        )
         assert set(covariance.dims) == {"measurement0", "measurement1"}
         assert set(covariance.unstack().species0.values) == {"CO", "CO2"}
