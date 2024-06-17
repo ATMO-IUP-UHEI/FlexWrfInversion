@@ -24,6 +24,7 @@ class TargetLoader(ABC):
         """Return the dimensions of the state"""
         pass
 
+    @abstractmethod
     def load_timeframe(
         self, start_time: np.datetime64, end_time: np.datetime64
     ) -> xr.DataArray:
@@ -300,6 +301,163 @@ class TargetLoaderAnthAndBioSectors(TargetLoader):
 
             self._target = (
                 xr.concat([bio_emissions, anth_emissions], dim="sector")
+                .stack(state=self.STATE_DIMS)
+                .astype(np.float32)
+                .compute()
+            )
+        return self._target
+
+    def load_timeframe(
+        self, start_time: np.datetime64, end_time: np.datetime64
+    ) -> xr.DataArray:
+        return (
+            self.target.unstack()
+            .sel(Time=slice(start_time, end_time))
+            .stack(state=self.STATE_DIMS)
+        )
+
+
+class TargetLoaderAnthBioCO(TargetLoader):
+    ANTH_SECTOR_KEY = "CO2_ANT_TOTAL"
+    BIO_SECTOR_KEY = "E_CO2_VPRM"
+    CO_SECTOR_KEY = "E_CO"
+    STATE_DIMS = ["subsector", "Time", "sector"]
+
+    def __init__(
+        self,
+        remapped_data_path: str,
+        season: str,
+        city: str,
+        prior_type: str = "true",
+        city_suffixes: list[str] = None,
+        germany_suffixes: list[str] = None,
+        time_resolution: int = 3,
+    ):
+        self._remapped_data_path = Path(remapped_data_path)
+        self._season = season
+        self._city = city
+        self._prior_type = prior_type
+        self._city_suffixes = (
+            city_suffixes if city_suffixes is not None else ["", "_sums"]
+        )
+        self._germany_suffixes = (
+            germany_suffixes if germany_suffixes is not None else ["_vprm_co", "_sums"]
+        )
+        self._time_resolution = time_resolution
+
+        self._target = None
+
+    @property
+    def target(self) -> xr.DataArray:
+        if self._target is None:
+            city_folder = (
+                self._remapped_data_path / self._season / self._city / self._prior_type
+            )
+            germany_folder = (
+                self._remapped_data_path / self._season / "germany" / self._prior_type
+            )
+            time_res_string = f"_{self._time_resolution}H"
+
+            true_emissions_city = (
+                xr.open_dataset(
+                    city_folder
+                    / (
+                        "remapped_true_emissions"
+                        + f"{self._city_suffixes[0]}{time_res_string}.nc"
+                    ),
+                    chunks="auto",
+                )
+                .drop_dims(["x_stag", "y_stag"])
+                .fillna(0)
+            )[[self.BIO_SECTOR_KEY, self.CO_SECTOR_KEY]]
+            true_emissions_germany = (
+                xr.open_dataset(
+                    germany_folder
+                    / (
+                        "remapped_true_emissions"
+                        + f"{self._germany_suffixes[0]}{time_res_string}.nc"
+                    ),
+                    chunks="auto",
+                )
+                .drop_dims(["x_stag", "y_stag"])
+                .fillna(0)
+            )[[self.BIO_SECTOR_KEY, self.CO_SECTOR_KEY]]
+
+            true_emissions_sums_city = (
+                xr.open_dataset(
+                    city_folder
+                    / (
+                        "remapped_true_emissions"
+                        + f"{self._city_suffixes[1]}{time_res_string}.nc"
+                    ),
+                    chunks="auto",
+                )
+                .drop_dims(["x_stag", "y_stag"])
+                .fillna(0)
+            )[self.ANTH_SECTOR_KEY]
+            true_emissions_sums_germany = (
+                xr.open_dataset(
+                    germany_folder
+                    / (
+                        "remapped_true_emissions"
+                        + f"{self._germany_suffixes[1]}{time_res_string}.nc"
+                    ),
+                    chunks="auto",
+                )
+                .drop_dims(["x_stag", "y_stag"])
+                .fillna(0)
+            )[self.ANTH_SECTOR_KEY]
+
+            bio_emissions = (
+                xr.concat(
+                    [
+                        true_emissions_city[self.BIO_SECTOR_KEY].assign_coords(
+                            subsector=true_emissions_city.group.values
+                        ),
+                        true_emissions_germany[self.BIO_SECTOR_KEY].assign_coords(
+                            subsector=true_emissions_germany.group.values
+                        ),
+                    ],
+                    dim="subsector",
+                )
+                .expand_dims(sector=[self.BIO_SECTOR_KEY])
+                .sortby("subsector")
+            )
+
+            co_emissions = (
+                xr.concat(
+                    [
+                        true_emissions_city[self.CO_SECTOR_KEY].assign_coords(
+                            subsector=true_emissions_city.group.values
+                        ),
+                        true_emissions_germany[self.CO_SECTOR_KEY].assign_coords(
+                            subsector=true_emissions_germany.group.values
+                        ),
+                    ],
+                    dim="subsector",
+                )
+                .expand_dims(sector=[self.CO_SECTOR_KEY])
+                .sortby("subsector")
+            )
+
+            anth_emissions = (
+                xr.concat(
+                    [
+                        true_emissions_sums_city.assign_coords(
+                            subsector=true_emissions_sums_city.group.values
+                        ),
+                        true_emissions_sums_germany.assign_coords(
+                            subsector=true_emissions_sums_germany.group.values
+                        ),
+                    ],
+                    dim="subsector",
+                )
+                .expand_dims(sector=[true_emissions_sums_city.name])
+                .sortby("subsector")
+            )
+
+            self._target = (
+                xr.concat([bio_emissions, anth_emissions, co_emissions], dim="sector")
                 .stack(state=self.STATE_DIMS)
                 .astype(np.float32)
                 .compute()
