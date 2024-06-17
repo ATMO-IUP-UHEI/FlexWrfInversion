@@ -3,9 +3,18 @@ from pathlib import Path
 import pytest
 import xarray as xr
 
-from flexwrfinversion.loaders.footprint import LoadFootprintForTotalInCity
-from flexwrfinversion.loaders.measurement import MeasurementFromFile
-from flexwrfinversion.loaders.target import TargetLoaderTotalInCity
+from flexwrfinversion.loaders.footprint import (
+    LoadFootprintAnthBioCO,
+    LoadFootprintForTotalInCity,
+)
+from flexwrfinversion.loaders.measurement import (
+    MeasurementFromFile,
+    MeasurementFromFileCO,
+)
+from flexwrfinversion.loaders.target import (
+    TargetLoaderAnthBioCO,
+    TargetLoaderTotalInCity,
+)
 
 EXAMPLE_DIRECTORY_0 = Path(__file__).parent.parent / "data" / "example_directory_0"
 
@@ -21,6 +30,26 @@ def measurement_from_file():
             time_resolution=3,
         ),
         footprint_loader=LoadFootprintForTotalInCity(
+            remapped_data_path=EXAMPLE_DIRECTORY_0 / "remapped_data",
+            season="spring",
+            city="munich",
+            prior_type="true",
+            time_resolution=3,
+        ),
+    )
+
+
+@pytest.fixture
+def measurement_from_file_co():
+    return MeasurementFromFileCO(
+        target_loader=TargetLoaderAnthBioCO(
+            remapped_data_path=EXAMPLE_DIRECTORY_0 / "remapped_data",
+            season="spring",
+            city="munich",
+            prior_type="true",
+            time_resolution=3,
+        ),
+        footprint_loader=LoadFootprintAnthBioCO(
             remapped_data_path=EXAMPLE_DIRECTORY_0 / "remapped_data",
             season="spring",
             city="munich",
@@ -52,3 +81,39 @@ class Test_MeasurementFromFile:
         assert isinstance(measurements_timeframe, xr.DataArray)
         assert len(measurements_timeframe.dims) == 1
         assert set(measurements_timeframe.dims) == {"measurement"}
+
+
+class Test_MeasurementFromFileCO:
+    def test_measurements(self, measurement_from_file_co):
+        measurements = measurement_from_file_co.measurements
+        assert measurements is not None
+        assert isinstance(measurements, xr.DataArray)
+        assert len(measurements.dims) == 1
+        assert set(measurements.dims) == {"measurement"}
+        assert {"MTime", "MPlace", "species"}.issubset(set(measurements.coords.keys()))
+        assert set(measurements.unstack().species.values) == {
+            "CO",
+            "CO2",
+        }
+
+    def test_load_timeframe(self, measurement_from_file_co):
+        measurements = measurement_from_file_co.measurements
+        start_mtime = measurements["MTime"].values[0]
+        end_mtime = measurements["MTime"].values[4]
+
+        measurements_timeframe = measurement_from_file_co.load_timeframe(
+            start_time=start_mtime,
+            end_time=end_mtime,
+        )
+
+        assert measurements_timeframe is not None
+        assert isinstance(measurements_timeframe, xr.DataArray)
+        assert len(measurements_timeframe.dims) == 1
+        assert set(measurements_timeframe.dims) == {"measurement"}
+        assert {"MTime", "MPlace", "species"}.issubset(
+            set(measurements_timeframe.coords.keys())
+        )
+        assert set(measurements_timeframe.unstack().species.values) == {
+            "CO",
+            "CO2",
+        }
