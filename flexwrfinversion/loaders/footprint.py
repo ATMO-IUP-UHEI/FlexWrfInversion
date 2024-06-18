@@ -396,6 +396,7 @@ class LoadFootprintAnthBioCO(FootprintLoader):
                 xr.concat(
                     [bio_footprints, anth_footprints, co_footprints], dim="sector"
                 )
+                .sortby("species")
                 .stack(state=self.STATE_DIMS, measurement=self.MEASUREMENT_DIMS)
                 .astype(np.float32)
                 .compute()

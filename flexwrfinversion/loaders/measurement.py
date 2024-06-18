@@ -212,6 +212,7 @@ class MeasurementFromFileCO(MeasurementLoader):
                     ],
                     dim="species",
                 )
+                .sortby("species")
                 .stack(measurement=self.footprint_loader.MEASUREMENT_DIMS)
                 .astype(np.float32)
                 .compute()

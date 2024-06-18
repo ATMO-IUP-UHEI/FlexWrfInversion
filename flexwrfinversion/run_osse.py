@@ -44,11 +44,17 @@ from tqdm.auto import tqdm
 from flexwrfinversion.loaders.footprint import (
     FootprintLoader,
     LoadFootprintAnthAndBioSectors,
+    LoadFootprintAnthBioCO,
     LoadFootprintForTotalInCity,
 )
-from flexwrfinversion.loaders.measurement import MeasurementFromFile, MeasurementLoader
+from flexwrfinversion.loaders.measurement import (
+    MeasurementFromFile,
+    MeasurementFromFileCO,
+    MeasurementLoader,
+)
 from flexwrfinversion.loaders.measurement_covariance import (
     ConstantNoCorrelation,
+    ConstantNoCorrelationCO,
     MeasurementCovarianceLoader,
 )
 from flexwrfinversion.loaders.prior import FlatPrior, PriorLoader, ShiftToBiospheric
@@ -56,10 +62,12 @@ from flexwrfinversion.loaders.prior_covariance import (
     PriorCovarianceLoader,
     RelativeErrorWithSpatialCorrelation,
     TargetAsErrorNoCorrelation,
+    TargetAsErrorWithCO_Correlation,
 )
 from flexwrfinversion.loaders.target import (
     TargetLoader,
     TargetLoaderAnthAndBioSectors,
+    TargetLoaderAnthBioCO,
     TargetLoaderTotalInCity,
 )
 
@@ -239,7 +247,9 @@ def main(args):
 
     for i in tqdm(range(config["n_permutations"])):
         mplace_values = np.random.choice(
-            measurement_loader.measurements.MPlace, config["n_stations"], replace=False
+            measurement_loader.measurements.unstack().MPlace,
+            config["n_stations"],
+            replace=False,
         )
 
         dates = np.arange(
