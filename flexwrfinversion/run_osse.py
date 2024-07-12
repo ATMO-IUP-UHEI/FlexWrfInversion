@@ -99,7 +99,9 @@ def _run_inversion(
     averaging_kernel_diag = []
     averaging_kernel_sum = []
 
-    for i, (start_date, end_date) in enumerate(zip(dates[:-1], dates[1:])):
+    for i, (start_date, end_date) in tqdm(
+        enumerate(zip(dates[:-1], dates[1:])), total=len(dates) - 1
+    ):
         emission_start_time = start_date - TIME_BUFFER_FOR_INVERSION_WINDOW
         emission_end_time = end_date + TIME_BUFFER_FOR_INVERSION_WINDOW
         measurement_start_time = start_date
