@@ -469,12 +469,13 @@ class FlexibleFootprintLoaderTotal(FootprintLoader):
             if self._keep_only is not None:
                 self._footprint = self._footprint.sel(MPlace=self._keep_only)
 
-        return (
-            self._footprint.sortby("subsector")
-            .stack(state=["subsector", "Time"], measurement=["MTime", "MPlace"])
-            .astype(np.float32)
-            .compute()
-        )
+            self._footprint = (
+                self._footprint.sortby("subsector")
+                .stack(state=self.STATE_DIMS, measurement=self.MEASUREMENT_DIMS)
+                .astype(np.float32)
+                .compute()
+            )
+        return self._footprint
 
     def load_timeframe(
         self,

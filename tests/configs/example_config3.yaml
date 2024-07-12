@@ -1,0 +1,37 @@
+prior:
+  prior_loader: 'FlexiblePriorLoaderTotal_ShiftToBiospheric'              # Name of the prior loader class
+  kwargs: 
+    anth_emission_file_city: /work/bb1170/RUN/b381737/software/repositories/FlexWrfInversion/tests/data/example_directory_0/remapped_data/spring/munich/true/remapped_true_emissions_sums_3H.nc
+    anth_emission_file_germany : /work/bb1170/RUN/b381737/software/repositories/FlexWrfInversion/tests/data/example_directory_0/remapped_data/spring/germany/true/remapped_true_emissions_sums_3H.nc
+    bio_emission_file_city: /work/bb1170/RUN/b381737/software/repositories/FlexWrfInversion/tests/data/example_directory_0/remapped_data/spring/germany/true/remapped_true_emissions_vprm_3H.nc
+    bio_emission_file_germany: /work/bb1170/RUN/b381737/software/repositories/FlexWrfInversion/tests/data/example_directory_0/remapped_data/spring/munich/true/remapped_true_emissions_3H.nc
+prior_covariance:
+  prior_covariance_loader: 'TargetAsErrorNoCorrelation'   # Name of the prior covariance loader class
+  kwargs: {}                 # Arguments to pass to the prior covariance loader
+target:
+  target_loader: 'FlexibleTargetLoaderTotal'             # Name of the target loader class
+  kwargs:        # Arguments to pass to the target loader
+    target_file_city: /work/bb1170/RUN/b381737/software/repositories/FlexWrfInversion/tests/data/example_directory_0/remapped_data/spring/munich/true/remapped_true_emissions_sums_3H.nc
+    target_file_germany: /work/bb1170/RUN/b381737/software/repositories/FlexWrfInversion/tests/data/example_directory_0/remapped_data/spring/germany/true/remapped_true_emissions_sums_3H.nc
+measurement:
+  measurement_loader: 'FlexibleMeasurementLoaderTotal'        # Name of the measurement loader class
+  kwargs:
+    measurement_file_city: /work/bb1170/RUN/b381737/software/repositories/FlexWrfInversion/tests/data/example_directory_0/remapped_data/spring/munich/true/true_concentrations_sums.nc
+    measurement_file_germany: /work/bb1170/RUN/b381737/software/repositories/FlexWrfInversion/tests/data/example_directory_0/remapped_data/spring/germany/true/true_concentrations_sums.nc                 # Arguments to pass to the measurement loader
+    keep_only: [site00]
+measurement_covariance:          
+  measurement_covariance_loader: 'ConstantNoCorrelation' # Name of the measurement covariance loader class
+  kwargs: 
+    ppm_error: 2
+footprint:
+  footprint_loader: 'FlexibleFootprintLoaderTotal'          # Name of the footprint loader class
+  kwargs: 
+    footprint_file_city: "/work/bb1170/RUN/b381737/software/repositories/FlexWrfInversion/tests/data/example_directory_0/remapped_data/spring/munich/true/remapped_footprints_sums_3H.nc"
+    footprint_file_germany: /work/bb1170/RUN/b381737/software/repositories/FlexWrfInversion/tests/data/example_directory_0/remapped_data/spring/germany/true/remapped_footprints_sums_3H.nc                 # Arguments to pass to the footprint loader
+    keep_only: [site00]
+
+n_permutations: 1               # Number of permutations to run
+n_stations: 1                   # Number of stations to use
+output_dir: '/work/bb1170/RUN/b381737/software/repositories/FlexWrfInversion/tests/data/example_directory_0/output'                  # Directory to save output
+output_name: 'test3.nc'                 # Name of the output file
+

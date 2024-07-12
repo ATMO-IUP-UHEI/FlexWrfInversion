@@ -42,12 +42,14 @@ from tqdm.auto import tqdm
 
 # flake8: noqa
 from flexwrfinversion.loaders.footprint import (
+    FlexibleFootprintLoaderTotal,
     FootprintLoader,
     LoadFootprintAnthAndBioSectors,
     LoadFootprintAnthBioCO,
     LoadFootprintForTotalInCity,
 )
 from flexwrfinversion.loaders.measurement import (
+    FlexibleMeasurementLoaderTotal,
     MeasurementFromFile,
     MeasurementFromFileCO,
     MeasurementLoader,
@@ -57,7 +59,12 @@ from flexwrfinversion.loaders.measurement_covariance import (
     ConstantNoCorrelationCO,
     MeasurementCovarianceLoader,
 )
-from flexwrfinversion.loaders.prior import FlatPrior, PriorLoader, ShiftToBiospheric
+from flexwrfinversion.loaders.prior import (
+    FlatPrior,
+    FlexiblePriorLoaderTotal_ShiftToBiospheric,
+    PriorLoader,
+    ShiftToBiospheric,
+)
 from flexwrfinversion.loaders.prior_covariance import (
     PriorCovarianceLoader,
     RelativeErrorWithSpatialCorrelation,
@@ -65,6 +72,7 @@ from flexwrfinversion.loaders.prior_covariance import (
     TargetAsErrorWithCO_Correlation,
 )
 from flexwrfinversion.loaders.target import (
+    FlexibleTargetLoaderTotal,
     TargetLoader,
     TargetLoaderAnthAndBioSectors,
     TargetLoaderAnthBioCO,
