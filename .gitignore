@@ -168,3 +168,5 @@ tests/configs/test.yaml
 tests/configs/test1.yaml
 tests/configs/test2.yaml
 *temp/
+tests/configs/test3.yaml
+tests/configs/test4.yaml
