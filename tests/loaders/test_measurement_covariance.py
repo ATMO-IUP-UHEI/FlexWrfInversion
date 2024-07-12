@@ -76,7 +76,7 @@ class Test_ConstantNoCorrelation:
             start_time=start_mtime, end_time=end_mtime
         )
         assert covariance is not None
-        assert covariance.shape == (5, 5)
+        assert covariance.shape == (10, 10)
         assert np.allclose(covariance.max(), (ppm_error * 1e-6) ** 2, atol=0)
         assert set(covariance.dims) == {"measurement0", "measurement1"}
 
@@ -91,7 +91,7 @@ class Test_ConstantNoCorrelation:
             start_time=start_mtime, end_time=end_mtime
         )
         assert covariance is not None
-        assert covariance.shape == (10, 10)
+        assert covariance.shape == (20, 20)
         assert np.allclose(covariance.max(), 4e-12, atol=0)
         assert set(covariance.dims) == {"measurement0", "measurement1"}
         assert set(covariance.unstack().species0.values) == {"CO", "CO2"}
@@ -109,7 +109,7 @@ class Test_ConstantNoCorrelationCO:
             start_time=start_mtime, end_time=end_mtime
         )
         assert covariance is not None
-        assert covariance.shape == (10, 10)
+        assert covariance.shape == (20, 20)
         assert np.allclose(covariance.max(), 4e-12, atol=0)
         assert np.allclose(
             covariance.where(covariance.species0 == "CO").max(), 1e-16, atol=0
