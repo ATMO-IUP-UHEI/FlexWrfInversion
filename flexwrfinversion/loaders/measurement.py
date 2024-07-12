@@ -271,11 +271,15 @@ class FlexibleMeasurementLoaderTotal(MeasurementLoader):
                 )
             if self._keep_only is not None:
                 self._measurements = self._measurements.sel(MPlace=self._keep_only)
-        return (
-            self._measurements.stack(measurement=self.footprint_loader.MEASUREMENT_DIMS)
-            .astype(np.float32)
-            .compute()
-        )
+            self._measurements = (
+                self._measurements.stack(
+                    measurement=self.footprint_loader.MEASUREMENT_DIMS
+                )
+                .astype(np.float32)
+                .compute()
+            )
+
+        return self._measurements
 
     def load_timeframe(
         self, start_time: np.datetime64, end_time: np.datetime64
