@@ -1,0 +1,34 @@
+prior:
+  prior_loader: 'FlatPrior'              # Name of the prior loader class
+  kwargs: 
+    value: 0                 # Arguments to pass to the prior loader
+prior_covariance:
+  prior_covariance_loader: 'TargetAsErrorWithCO_Correlation'   # Name of the prior covariance loader class
+  kwargs:
+    anth_co_correlation: 0.5                    # Arguments to pass to the prior covariance loader
+target:
+  target_loader: 'TargetLoaderAnthBioCO'             # Name of the target loader class
+  kwargs:        # Arguments to pass to the target loader
+    remapped_data_path: "/work/bb1170/RUN/b381737/software/repositories/FlexWrfInversion/tests/data/example_directory_0/remapped_data"
+    season: "spring"
+    city: "munich"
+measurement:
+  measurement_loader: 'MeasurementFromFileCO'        # Name of the measurement loader class
+  kwargs: {}                    # Arguments to pass to the measurement loader
+measurement_covariance:          
+  measurement_covariance_loader: 'ConstantNoCorrelationCO' # Name of the measurement covariance loader class
+  kwargs: 
+    ppm_error: 0.1
+    ppb_error: 0.5                   # Arguments to pass to the measurement covariance loader
+footprint:
+  footprint_loader: 'LoadFootprintAnthBioCO'          # Name of the footprint loader class
+  kwargs: 
+    remapped_data_path: "/work/bb1170/RUN/b381737/software/repositories/FlexWrfInversion/tests/data/example_directory_0/remapped_data"
+    season: "spring"
+    city: "munich"                   # Arguments to pass to the footprint loader
+
+n_permutations: 1               # Number of permutations to run
+n_stations: 1                   # Number of stations to use
+output_dir: '/work/bb1170/RUN/b381737/software/repositories/FlexWrfInversion/tests/data/example_directory_0/output'                  # Directory to save output
+output_name: 'test2.nc'                 # Name of the output file
+

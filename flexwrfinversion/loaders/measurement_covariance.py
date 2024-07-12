@@ -70,3 +70,38 @@ class ConstantNoCorrelation(MeasurementCovarianceLoader):
             .astype(np.float32)
             .compute()
         )
+
+
+class ConstantNoCorrelationCO(MeasurementCovarianceLoader):
+    def __init__(
+        self,
+        measurement_loader: MeasurementFromFile,
+        ppm_error: float,
+        ppb_error: float,
+    ):
+        super().__init__(measurement_loader)
+        self._ppm_error = ppm_error
+        self._ppb_error = ppb_error
+
+    def load_timeframe(
+        self, start_time: np.datetime64, end_time: np.datetime64
+    ) -> xr.DataArray:
+        measurement_subset = (
+            self.measurement_loader.measurements.unstack()
+            .sel(MTime=slice(start_time, end_time))
+            .stack(
+                measurement=self.measurement_loader.footprint_loader.MEASUREMENT_DIMS
+            )
+        )
+        std = xr.DataArray(
+            np.ones_like(measurement_subset, dtype=measurement_subset.dtype),
+            coords=measurement_subset.coords,
+        )
+        std *= (
+            std.where(measurement_subset.species == "CO2", 0) * 1e-6 * self._ppm_error
+        ) + (std.where(measurement_subset.species == "CO", 0) * 1e-9 * self._ppb_error)
+        return (
+            (xr.zeros_like(self._to_two_dimensions(std)) + np.diag(std.data**2))
+            .astype(np.float32)
+            .compute()
+        )

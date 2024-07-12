@@ -160,3 +160,108 @@ class TargetAsErrorNoCorrelation(PriorCovarianceLoader):
         return self._to_two_dimensions(prior_selection) * np.eye(
             prior_selection.shape[0]
         )
+
+
+class TargetAsErrorWithCO_Correlation(PriorCovarianceLoader):
+    def __init__(
+        self,
+        prior_loader: PriorLoader,
+        anth_co_correlation: float = 0,
+        spatial_correlation_path: str | Path = None,
+    ):
+        super().__init__(prior_loader)
+        self._anth_co_correlation = anth_co_correlation
+        self._spatial_correlation_path = spatial_correlation_path
+        self._prior_std = None
+        self._sector_correlation = None
+        self._spatial_correlation = None
+
+    @property
+    def prior_std(self) -> xr.DataArray:
+        if self._prior_std is None:
+            self._prior_std = np.abs(self.prior_loader.target_loader.target)
+        return self._prior_std
+
+    @property
+    def spatial_correlation(self) -> xr.DataArray:
+        if self._spatial_correlation is None:
+            if self._spatial_correlation_path is None:
+                spatial_coordinate_values = (
+                    self.prior_loader.prior.unstack().subsector.values
+                )
+                self._spatial_correlation = xr.DataArray(
+                    np.eye(
+                        len(spatial_coordinate_values),
+                        dtype=self.prior_loader.prior.dtype,
+                    ),
+                    coords=[
+                        ("subsector0", spatial_coordinate_values),
+                        ("subsector1", spatial_coordinate_values),
+                    ],
+                ).compute()
+            else:
+                self._spatial_correlation = xr.open_dataarray(
+                    self._spatial_correlation_path
+                ).compute()
+        return self._spatial_correlation
+
+    @property
+    def sector_correlation(self) -> xr.DataArray:
+        if self._sector_correlation is None:
+            correlation = self._to_two_dimensions(
+                xr.zeros_like(
+                    self.prior_loader.prior.unstack().isel(Time=0, subsector=0)
+                )
+            )
+            correlation = correlation + np.eye(correlation.shape[0])
+            anth_index = np.argwhere(
+                self.prior_loader.prior.unstack().sector.values
+                == self.prior_loader.target_loader.ANTH_SECTOR_KEY
+            ).item()
+            co_index = np.argwhere(
+                self.prior_loader.prior.unstack().sector.values
+                == self.prior_loader.target_loader.CO_SECTOR_KEY
+            ).item()
+            correlation[anth_index, co_index] = self._anth_co_correlation
+            correlation[co_index, anth_index] = self._anth_co_correlation
+            self._sector_correlation = correlation
+        return self._sector_correlation
+
+    def load_timeframe(
+        self, start_time: np.datetime64, end_time: np.datetime64
+    ) -> xr.DataArray:
+        unstacked_prior_std = self.prior_std.unstack()
+        time_values = unstacked_prior_std.Time.sel(
+            Time=slice(start_time, end_time)
+        ).values
+        temporal_correlation = xr.DataArray(
+            np.eye(
+                len(time_values),
+                dtype=self.prior_loader.prior.dtype,
+            ),
+            coords=[("Time0", time_values), ("Time1", time_values)],
+        )
+        correlation = (
+            self.spatial_correlation * temporal_correlation * self.sector_correlation
+        ).stack(
+            state0=[
+                state_dim + "0"
+                for state_dim in self.prior_loader.target_loader.STATE_DIMS
+            ],
+            state1=[
+                state_dim + "1"
+                for state_dim in self.prior_loader.target_loader.STATE_DIMS
+            ],
+        )
+        return (
+            (
+                self._to_two_dimensions(
+                    unstacked_prior_std.sel(Time=slice(start_time, end_time)).stack(
+                        state=self.prior_loader.target_loader.STATE_DIMS
+                    )
+                )
+                * correlation
+            )
+            .astype(np.float32)
+            .compute()
+        )

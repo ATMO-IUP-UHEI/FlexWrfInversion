@@ -5,6 +5,7 @@ import xarray as xr
 
 from flexwrfinversion.loaders.footprint import (
     LoadFootprintAnthAndBioSectors,
+    LoadFootprintAnthBioCO,
     LoadFootprintForTotalInCity,
 )
 
@@ -25,6 +26,17 @@ def load_footprint_for_total_in_city():
 @pytest.fixture
 def load_footprint_anth_and_bio_sectors():
     return LoadFootprintAnthAndBioSectors(
+        remapped_data_path=EXAMPLE_DIRECTORY_0 / "remapped_data",
+        season="spring",
+        city="munich",
+        prior_type="true",
+        time_resolution=3,
+    )
+
+
+@pytest.fixture
+def load_footprint_anth_bio_co():
+    return LoadFootprintAnthBioCO(
         remapped_data_path=EXAMPLE_DIRECTORY_0 / "remapped_data",
         season="spring",
         city="munich",
@@ -89,3 +101,37 @@ class Test_LoadFootprintAnthAndBioSectors:
         assert len(footprint_timeframe.dims) == 2
         assert set(footprint_timeframe.dims) == {"state", "measurement"}
         assert {"sector"}.issubset(set(footprint.coords.keys()))
+
+
+class Test_LoadFootprintAnthBioCO:
+    def test_footprint(self, load_footprint_anth_bio_co):
+        footprint = load_footprint_anth_bio_co.footprint
+        assert footprint is not None
+        assert isinstance(footprint, xr.DataArray)
+        assert len(footprint.dims) == 2
+        assert set(footprint.dims) == {"state", "measurement"}
+        assert {"sector", "Time", "MTime", "subsector", "MPlace", "species"}.issubset(
+            set(footprint.coords.keys())
+        )
+
+    def test_load_timeframe(self, load_footprint_anth_bio_co):
+        footprint = load_footprint_anth_bio_co.footprint
+        start_time = footprint["Time"].values[0]
+        end_time = footprint["Time"].values[3]
+        start_mtime = footprint["MTime"].values[0]
+        end_mtime = footprint["MTime"].values[4]
+
+        footprint_timeframe = load_footprint_anth_bio_co.load_timeframe(
+            start_time=start_time,
+            end_time=end_time,
+            start_mtime=start_mtime,
+            end_mtime=end_mtime,
+        )
+
+        assert footprint_timeframe is not None
+        assert isinstance(footprint_timeframe, xr.DataArray)
+        assert len(footprint_timeframe.dims) == 2
+        assert set(footprint_timeframe.dims) == {"state", "measurement"}
+        assert {"sector", "Time", "MTime", "subsector", "MPlace", "species"}.issubset(
+            set(footprint_timeframe.coords.keys())
+        )
