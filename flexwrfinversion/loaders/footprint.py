@@ -415,3 +415,58 @@ class LoadFootprintAnthBioCO(FootprintLoader):
             .sel(Time=slice(start_time, end_time), MTime=slice(start_mtime, end_mtime))
             .stack(state=self.STATE_DIMS, measurement=self.MEASUREMENT_DIMS)
         )
+
+
+class FlexibleLoadTotalFootprint(FootprintLoader):
+    TOTAL_NAME = "CO2_TOTAL"
+
+    def __init__(
+        self,
+        footprint_file_city: str | Path,
+        footprint_file_germany: str | Path,
+    ):
+        self._footprint_file_city = Path(footprint_file_city)
+        self._footprint_file_germany = Path(footprint_file_germany)
+        self._footprint = None
+
+    @property
+    def footprint(self):
+        if self._footprint is None:
+            footprints_city = self._open_and_prepare(self._footprint_file_city)[
+                self.TOTAL_NAME
+            ]
+            footprints_germany = self._open_and_prepare(self._footprint_file_germany)[
+                self.TOTAL_NAME
+            ]
+
+            self._footprint = (
+                xr.concat(
+                    [
+                        footprints_city.assign_coords(
+                            subsector=footprints_city.group.values
+                        ),
+                        footprints_germany.assign_coords(
+                            subsector=footprints_germany.group.values
+                        ),
+                    ],
+                    dim="subsector",
+                )[self.TOTAL_NAME]
+                .sortby("subsector")
+                .stack(state=["subsector", "Time"], measurement=["MTime", "MPlace"])
+                .astype(np.float32)
+                .compute()
+            )
+        return self._footprint
+
+    def load_timeframe(
+        self,
+        start_time: np.datetime64,
+        end_time: np.datetime64,
+        start_mtime: np.datetime64,
+        end_mtime: np.datetime64,
+    ) -> xr.DataArray:
+        return (
+            self.footprint.unstack()
+            .sel(Time=slice(start_time, end_time), MTime=slice(start_mtime, end_mtime))
+            .stack(state=["subsector", "Time"], measurement=["MTime", "MPlace"])
+        )
