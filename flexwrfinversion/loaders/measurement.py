@@ -2,16 +2,19 @@
      inversion."""
 
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 import numpy as np
 import xarray as xr
 
 from flexwrfinversion.loaders.footprint import (
+    FlexibleFootprintLoaderTotal,
     FootprintLoader,
     LoadFootprintAnthBioCO,
     LoadFootprintForTotalInCity,
 )
 from flexwrfinversion.loaders.target import (
+    FlexibleTargetLoaderTotal,
     TargetLoader,
     TargetLoaderAnthAndBioSectors,
     TargetLoaderAnthBioCO,
@@ -218,6 +221,61 @@ class MeasurementFromFileCO(MeasurementLoader):
                 .compute()
             )
         return self._measurements
+
+    def load_timeframe(
+        self, start_time: np.datetime64, end_time: np.datetime64
+    ) -> xr.DataArray:
+        return (
+            self.measurements.unstack()
+            .sel(MTime=slice(start_time, end_time))
+            .stack(measurement=self.footprint_loader.MEASUREMENT_DIMS)
+        )
+
+
+class FlexibleMeasurementLoaderTotal(MeasurementLoader):
+    def __init__(
+        self,
+        target_loader: FlexibleTargetLoaderTotal,
+        footprint_loader: FlexibleFootprintLoaderTotal,
+        measurement_file_city: str | Path,
+        measurement_file_germany: str | Path,
+        leave_out: list[str] = None,
+        keep_only: list[str] = None,
+    ):
+        super().__init__(target_loader, footprint_loader)
+        self._measurement_file_city = measurement_file_city
+        self._measurement_file_germany = measurement_file_germany
+        if leave_out is not None and keep_only is not None:
+            raise ValueError("leave_out and keep_only cannot be used together.")
+        elif leave_out is not None:
+            leave_out = np.char.encode(np.array(leave_out, dtype=str))
+        elif keep_only is not None:
+            keep_only = np.char.encode(np.array(keep_only, dtype=str))
+        self._leave_out = leave_out
+        self._keep_only = keep_only
+        self._measurements = None
+
+    @property
+    def measurements(self):
+        if self._measurements is None:
+            measurements_city = xr.open_dataset(self._measurement_file_city)[
+                self.target_loader.TOTAL_EMISSION_KEY
+            ]
+            measurements_germany = xr.open_dataset(self._measurement_file_germany)[
+                self.target_loader.TOTAL_EMISSION_KEY
+            ]
+            self._measurements = measurements_city + measurements_germany
+            if self._leave_out is not None:
+                self._measurements = self._measurements.isel(
+                    MPlace=~np.isin(self._measurements.MPlace.values, self._leave_out)
+                )
+            if self._keep_only is not None:
+                self._measurements = self._measurements.sel(MPlace=self._keep_only)
+        return (
+            self._measurements.stack(measurement=self.footprint_loader.MEASUREMENT_DIMS)
+            .astype(np.float32)
+            .compute()
+        )
 
     def load_timeframe(
         self, start_time: np.datetime64, end_time: np.datetime64

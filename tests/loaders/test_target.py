@@ -4,6 +4,7 @@ import pytest
 import xarray as xr
 
 from flexwrfinversion.loaders.target import (
+    FlexibleTargetLoaderTotal,
     TargetLoaderAnthAndBioSectors,
     TargetLoaderAnthBioCO,
     TargetLoaderTotalInCity,
@@ -42,6 +43,24 @@ def target_loader_anth_bio_co():
         city="munich",
         prior_type="true",
         time_resolution=3,
+    )
+
+
+@pytest.fixture
+def flexible_target_loader_total():
+    return FlexibleTargetLoaderTotal(
+        EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "munich"
+        / "true"
+        / "remapped_true_emissions_sums_3H.nc",
+        EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "germany"
+        / "true"
+        / "remapped_true_emissions_sums_3H.nc",
     )
 
 
@@ -132,3 +151,27 @@ class Test_TargetLoaderAnthBioCO:
         assert set(target_timeframe.dims) == {"state"}
         assert {"subsector", "Time", "sector"}.issubset(set(target.coords.keys()))
         assert {"CO2_ANT_TOTAL", "E_CO2_VPRM", "E_CO"} == set(target.sector.values)
+
+
+class Test_FlexibleTargetLoaderTotal:
+    def test_target(self, flexible_target_loader_total):
+        target = flexible_target_loader_total.target
+        assert target is not None
+        assert isinstance(target, xr.DataArray)
+        assert len(target.dims) == 1
+        assert set(target.dims) == {"state"}
+
+    def test_load_timeframe(self, flexible_target_loader_total):
+        target = flexible_target_loader_total.target
+        start_time = target["Time"].values[0]
+        end_time = target["Time"].values[3]
+
+        target_timeframe = flexible_target_loader_total.load_timeframe(
+            start_time=start_time,
+            end_time=end_time,
+        )
+
+        assert target_timeframe is not None
+        assert isinstance(target_timeframe, xr.DataArray)
+        assert len(target_timeframe.dims) == 1
+        assert set(target_timeframe.dims) == {"state"}

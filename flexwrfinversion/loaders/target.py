@@ -472,3 +472,51 @@ class TargetLoaderAnthBioCO(TargetLoader):
             .sel(Time=slice(start_time, end_time))
             .stack(state=self.STATE_DIMS)
         )
+
+
+class FlexibleTargetLoaderTotal(TargetLoader):
+    TOTAL_EMISSION_KEY = "CO2_TOTAL"
+    STATE_DIMS = ["subsector", "Time"]
+
+    def __init__(
+        self,
+        target_file_city: str | Path,
+        target_file_germany: str | Path,
+    ):
+        self._target_file_city = target_file_city
+        self._target_file_germany = target_file_germany
+        self._target = None
+
+    @property
+    def target(self) -> xr.DataArray:
+        if self._target is None:
+            target_city = xr.open_dataset(self._target_file_city)[
+                self.TOTAL_EMISSION_KEY
+            ]
+            target_germany = xr.open_dataset(self._target_file_germany)[
+                self.TOTAL_EMISSION_KEY
+            ]
+            self._target = (
+                xr.concat(
+                    [
+                        target_city.assign_coords(subsector=target_city.group.values),
+                        target_germany.assign_coords(
+                            subsector=target_germany.group.values
+                        ),
+                    ],
+                    dim="subsector",
+                )
+                .stack(state=self.STATE_DIMS)
+                .astype(np.float32)
+                .compute()
+            )
+        return self._target
+
+    def load_timeframe(
+        self, start_time: np.datetime64, end_time: np.datetime64
+    ) -> xr.DataArray:
+        return (
+            self.target.unstack()
+            .sel(Time=slice(start_time, end_time))
+            .stack(state=self.STATE_DIMS)
+        )

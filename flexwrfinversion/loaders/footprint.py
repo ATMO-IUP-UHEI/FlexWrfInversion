@@ -417,46 +417,64 @@ class LoadFootprintAnthBioCO(FootprintLoader):
         )
 
 
-class FlexibleLoadTotalFootprint(FootprintLoader):
-    TOTAL_NAME = "CO2_TOTAL"
+class FlexibleFootprintLoaderTotal(FootprintLoader):
+    TOTAL_EMISSION_KEY = "CO2_TOTAL"
+    STATE_DIMS = ["subsector", "Time"]
+    MEASUREMENT_DIMS = ["MTime", "MPlace"]
 
     def __init__(
         self,
         footprint_file_city: str | Path,
         footprint_file_germany: str | Path,
+        leave_out: list[str] = None,
+        keep_only: list[str] = None,
     ):
         self._footprint_file_city = Path(footprint_file_city)
         self._footprint_file_germany = Path(footprint_file_germany)
+        if leave_out is not None and keep_only is not None:
+            raise ValueError("leave_out and keep_only cannot be used together.")
+        elif leave_out is not None:
+            leave_out = np.char.encode(np.array(leave_out, dtype=str))
+        elif keep_only is not None:
+            keep_only = np.char.encode(np.array(keep_only, dtype=str))
+        self._leave_out = leave_out
+        self._keep_only = keep_only
         self._footprint = None
 
     @property
     def footprint(self):
         if self._footprint is None:
             footprints_city = self._open_and_prepare(self._footprint_file_city)[
-                self.TOTAL_NAME
+                self.TOTAL_EMISSION_KEY
             ]
             footprints_germany = self._open_and_prepare(self._footprint_file_germany)[
-                self.TOTAL_NAME
+                self.TOTAL_EMISSION_KEY
             ]
 
-            self._footprint = (
-                xr.concat(
-                    [
-                        footprints_city.assign_coords(
-                            subsector=footprints_city.group.values
-                        ),
-                        footprints_germany.assign_coords(
-                            subsector=footprints_germany.group.values
-                        ),
-                    ],
-                    dim="subsector",
-                )[self.TOTAL_NAME]
-                .sortby("subsector")
-                .stack(state=["subsector", "Time"], measurement=["MTime", "MPlace"])
-                .astype(np.float32)
-                .compute()
+            self._footprint = xr.concat(
+                [
+                    footprints_city.assign_coords(
+                        subsector=footprints_city.group.values
+                    ),
+                    footprints_germany.assign_coords(
+                        subsector=footprints_germany.group.values
+                    ),
+                ],
+                dim="subsector",
             )
-        return self._footprint
+            if self._leave_out is not None:
+                self._footprint = self._footprint.isel(
+                    MPlace=~np.isin(self._footprint.MPlace.values, self._leave_out)
+                )
+            if self._keep_only is not None:
+                self._footprint = self._footprint.sel(MPlace=self._keep_only)
+
+        return (
+            self._footprint.sortby("subsector")
+            .stack(state=["subsector", "Time"], measurement=["MTime", "MPlace"])
+            .astype(np.float32)
+            .compute()
+        )
 
     def load_timeframe(
         self,
@@ -468,5 +486,5 @@ class FlexibleLoadTotalFootprint(FootprintLoader):
         return (
             self.footprint.unstack()
             .sel(Time=slice(start_time, end_time), MTime=slice(start_mtime, end_mtime))
-            .stack(state=["subsector", "Time"], measurement=["MTime", "MPlace"])
+            .stack(state=self.STATE_DIMS, measurement=self.MEASUREMENT_DIMS)
         )

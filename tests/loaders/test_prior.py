@@ -3,8 +3,13 @@ from pathlib import Path
 import pytest
 import xarray as xr
 
-from flexwrfinversion.loaders.prior import FlatPrior, ShiftToBiospheric
+from flexwrfinversion.loaders.prior import (
+    FlatPrior,
+    FlexiblePriorLoaderTotal_ShiftToBiospheric,
+    ShiftToBiospheric,
+)
 from flexwrfinversion.loaders.target import (
+    FlexibleTargetLoaderTotal,
     TargetLoaderAnthAndBioSectors,
     TargetLoaderAnthBioCO,
     TargetLoaderTotalInCity,
@@ -47,6 +52,51 @@ def flat_prior_with_co():
         time_resolution=3,
     )
     return FlatPrior(target_loader=target_loader, value=0.1)
+
+
+@pytest.fixture
+def flexible_prior_loader_total_shift_to_biospheric():
+    target_loader = FlexibleTargetLoaderTotal(
+        EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "munich"
+        / "true"
+        / "remapped_true_emissions_sums_3H.nc",
+        EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "germany"
+        / "true"
+        / "remapped_true_emissions_sums_3H.nc",
+    )
+    return FlexiblePriorLoaderTotal_ShiftToBiospheric(
+        target_loader=target_loader,
+        anth_emission_file_city=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "munich"
+        / "true"
+        / "remapped_true_emissions_sums_3H.nc",
+        anth_emission_file_germany=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "germany"
+        / "true"
+        / "remapped_true_emissions_sums_3H.nc",
+        bio_emission_file_city=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "munich"
+        / "true"
+        / "remapped_true_emissions_3H.nc",
+        bio_emission_file_germany=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "germany"
+        / "true"
+        / "remapped_true_emissions_vprm_co_3H.nc",
+    )
 
 
 class Test_ShiftToBiospheric:
@@ -126,3 +176,29 @@ class Test_FlatPrior:
         assert {"CO2_ANT_TOTAL", "E_CO2_VPRM", "E_CO"} == set(
             prior_timeframe_with_co.sector.values
         )
+
+
+class Test_FlexiblePriorLoaderTotal_ShiftToBiospheric:
+    def test_prior(self, flexible_prior_loader_total_shift_to_biospheric):
+        prior = flexible_prior_loader_total_shift_to_biospheric.prior
+        assert prior is not None
+        assert isinstance(prior, xr.DataArray)
+        assert len(prior.dims) == 1
+        assert set(prior.dims) == {"state"}
+
+    def test_load_timeframe(self, flexible_prior_loader_total_shift_to_biospheric):
+        prior = flexible_prior_loader_total_shift_to_biospheric.prior
+        start_time = prior["Time"].values[0]
+        end_time = prior["Time"].values[3]
+
+        prior_timeframe = (
+            flexible_prior_loader_total_shift_to_biospheric.load_timeframe(
+                start_time=start_time,
+                end_time=end_time,
+            )
+        )
+
+        assert prior_timeframe is not None
+        assert isinstance(prior_timeframe, xr.DataArray)
+        assert len(prior_timeframe.dims) == 1
+        assert set(prior_timeframe.dims) == {"state"}
