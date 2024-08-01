@@ -1,6 +1,7 @@
 """ This module descibes classes that can be used to load footprint data for an
  inversion."""
 
+import pickle
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -440,6 +441,7 @@ class FlexibleFootprintLoaderTotal(FootprintLoader):
         self._leave_out = leave_out
         self._keep_only = keep_only
         self._footprint = None
+        self._footprint_unstacked = None
 
     @property
     def footprint(self):
@@ -477,6 +479,31 @@ class FlexibleFootprintLoaderTotal(FootprintLoader):
             )
         return self._footprint
 
+    @property
+    def unstacked_footprint(self):
+        if self._footprint_unstacked is None:
+            self._footprint_unstacked = self.footprint.unstack()
+        return self._footprint_unstacked
+
+    @staticmethod
+    def _open_and_prepare(
+        path: Path,
+    ):
+        if path.suffix == ".nc":
+            data = (
+                xr.open_dataset(
+                    path,
+                    chunks="auto",
+                )
+                .drop_dims(["x_stag", "y_stag"])
+                .fillna(0)
+            )
+
+        elif path.suffix == ".pkl":
+            with open(path, "rb") as f:
+                data = pickle.load(f)
+        return data
+
     def load_timeframe(
         self,
         start_time: np.datetime64,
@@ -484,8 +511,11 @@ class FlexibleFootprintLoaderTotal(FootprintLoader):
         start_mtime: np.datetime64,
         end_mtime: np.datetime64,
     ) -> xr.DataArray:
-        return (
-            self.footprint.unstack()
-            .sel(Time=slice(start_time, end_time), MTime=slice(start_mtime, end_mtime))
+        timeframe_data = (
+            self.unstacked_footprint.sel(Time=slice(start_time, end_time))
+            .sel(MTime=slice(start_mtime, end_mtime))
             .stack(state=self.STATE_DIMS, measurement=self.MEASUREMENT_DIMS)
         )
+        if self._footprint_file_city.suffix == ".pkl":
+            timeframe_data.values = timeframe_data.data.todense()
+        return timeframe_data

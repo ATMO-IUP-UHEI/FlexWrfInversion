@@ -254,6 +254,7 @@ class FlexibleMeasurementLoaderTotal(MeasurementLoader):
         self._leave_out = leave_out
         self._keep_only = keep_only
         self._measurements = None
+        self._unstacked_measurements = None
 
     @property
     def measurements(self):
@@ -281,11 +282,15 @@ class FlexibleMeasurementLoaderTotal(MeasurementLoader):
 
         return self._measurements
 
+    @property
+    def unstacked_measurements(self):
+        if self._unstacked_measurements is None:
+            self._unstacked_measurements = self.measurements.unstack()
+        return self._unstacked_measurements
+
     def load_timeframe(
         self, start_time: np.datetime64, end_time: np.datetime64
     ) -> xr.DataArray:
-        return (
-            self.measurements.unstack()
-            .sel(MTime=slice(start_time, end_time))
-            .stack(measurement=self.footprint_loader.MEASUREMENT_DIMS)
+        return self.unstacked_measurements.sel(MTime=slice(start_time, end_time)).stack(
+            measurement=self.footprint_loader.MEASUREMENT_DIMS
         )

@@ -27,6 +27,7 @@ n_permutations: #               # Number of permutations to run
 n_stations: #                   # Number of stations to use
 output_dir: ''                  # Directory to save output
 output_name: ''                 # Name of the output file
+(permutation_seed: #)           # Seed for the permutation (optional)
 ```
 """
 
@@ -118,15 +119,19 @@ def _run_inversion(
         prior_emissions = prior_loader.load_timeframe(
             emission_start_time, emission_end_time
         )
+
         prior_emission_covariance = prior_covariance_loader.load_timeframe(
             emission_start_time, emission_end_time
         )
+
         measurements = measurement_loader.load_timeframe(
             measurement_start_time, measurement_end_time
         )
+
         measurement_covariance = measurement_covariance_loader.load_timeframe(
             measurement_start_time, measurement_end_time
         )
+
         footprint = footprint_loader.load_timeframe(
             emission_start_time,
             emission_end_time,
@@ -255,13 +260,25 @@ def main(args):
         config["measurement_covariance"]["measurement_covariance_loader"]
     )(measurement_loader, **config["measurement_covariance"]["kwargs"])
 
-    for i in tqdm(range(config["n_permutations"])):
-        mplace_values = np.random.choice(
+    if "permutation_seed" in config:
+        global_state = np.random.get_state()
+        np.random.seed(config["permutation_seed"])
+
+    mplace_value_permutations = [
+        np.random.choice(
             measurement_loader.measurements.unstack().MPlace,
             config["n_stations"],
             replace=False,
         )
+        for _ in range(config["n_permutations"])
+    ]
 
+    if "permutation_seed" in config:
+        np.random.set_state(global_state)
+
+    for i, mplace_values in tqdm(
+        enumerate(mplace_value_permutations), total=len(mplace_value_permutations)
+    ):
         dates = np.arange(
             prior_loader.prior.Time[0].values,
             prior_loader.prior.Time[-1].values + np.timedelta64(1, "D"),
