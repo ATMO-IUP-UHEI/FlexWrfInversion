@@ -519,3 +519,140 @@ class FlexibleFootprintLoaderTotal(FootprintLoader):
         if self._footprint_file_city.suffix == ".pkl":
             timeframe_data.values = timeframe_data.data.todense()
         return timeframe_data
+
+
+class FlexibleFootprintLoaderAnthBio(FootprintLoader):
+    ANTH_SECTOR_KEY = "CO2_ANT_TOTAL"
+    BIO_SECTOR_KEY = "E_CO2_VPRM"
+    STATE_DIMS = ["subsector", "Time", "sector"]
+    MEASUREMENT_DIMS = ["MTime", "MPlace"]
+
+    def __init__(
+        self,
+        footprint_file_city_bio: str | Path,
+        footprint_file_city_ant: str | Path,
+        footprint_file_germany_bio: str | Path,
+        footprint_file_germany_ant: str | Path,
+        leave_out: list[str] = None,
+        keep_only: list[str] = None,
+    ):
+        self._footprint_file_city_bio = Path(footprint_file_city_bio)
+        self._footprint_file_city_ant = Path(footprint_file_city_ant)
+        self._footprint_file_germany_bio = Path(footprint_file_germany_bio)
+        self._footprint_file_germany_ant = Path(footprint_file_germany_ant)
+        if leave_out is not None and keep_only is not None:
+            raise ValueError("leave_out and keep_only cannot be used together.")
+        elif leave_out is not None:
+            leave_out = np.char.encode(np.array(leave_out, dtype=str))
+        elif keep_only is not None:
+            keep_only = np.char.encode(np.array(keep_only, dtype=str))
+        self._leave_out = leave_out
+        self._keep_only = keep_only
+        self._footprint = None
+        self._footprint_unstacked = None
+
+    @property
+    def footprint(self) -> xr.DataArray:
+        if self._footprint is None:
+            footprints_city = self._open_and_prepare(self._footprint_file_city_bio)[
+                self.BIO_SECTOR_KEY
+            ]
+
+            footprints_germany = self._open_and_prepare(
+                self._footprint_file_germany_bio
+            )[self.BIO_SECTOR_KEY]
+
+            footprints_sums_city = self._open_and_prepare(
+                self._footprint_file_city_ant
+            )[self.ANTH_SECTOR_KEY]
+            footprints_sums_germany = self._open_and_prepare(
+                self._footprint_file_germany_ant
+            )[self.ANTH_SECTOR_KEY]
+
+            bio_footprints = (
+                xr.concat(
+                    [
+                        footprints_city.assign_coords(
+                            subsector=footprints_city.group.values
+                        ),
+                        footprints_germany.assign_coords(
+                            subsector=footprints_germany.group.values
+                        ),
+                    ],
+                    dim="subsector",
+                )
+                .expand_dims(sector=[footprints_city.name])
+                .sortby("subsector")
+            )
+
+            anth_footprints = (
+                xr.concat(
+                    [
+                        footprints_sums_city.assign_coords(
+                            subsector=footprints_city.group.values
+                        ),
+                        footprints_sums_germany.assign_coords(
+                            subsector=footprints_germany.group.values
+                        ),
+                    ],
+                    dim="subsector",
+                )
+                .expand_dims(sector=[footprints_sums_city.name])
+                .sortby("subsector")
+            )
+
+            if self._leave_out is not None:
+                self._footprint = self._footprint.isel(
+                    MPlace=~np.isin(self._footprint.MPlace.values, self._leave_out)
+                )
+            if self._keep_only is not None:
+                self._footprint = self._footprint.sel(MPlace=self._keep_only)
+
+            self._footprint = (
+                xr.concat([bio_footprints, anth_footprints], dim="sector")
+                .stack(state=self.STATE_DIMS, measurement=self.MEASUREMENT_DIMS)
+                .astype(np.float32)
+                .compute()
+            )
+        return self._footprint
+
+    @property
+    def footprint_unstacked(self):
+        if self._footprint_unstacked is None:
+            self._footprint_unstacked = self.footprint.unstack()
+        return self._footprint_unstacked
+
+    @staticmethod
+    def _open_and_prepare(
+        path: Path,
+    ):
+        if path.suffix == ".nc":
+            data = (
+                xr.open_dataset(
+                    path,
+                    chunks="auto",
+                )
+                .drop_dims(["x_stag", "y_stag"])
+                .fillna(0)
+            )
+
+        elif path.suffix == ".pkl":
+            with open(path, "rb") as f:
+                data = pickle.load(f)
+        return data
+
+    def load_timeframe(
+        self,
+        start_time: np.datetime64,
+        end_time: np.datetime64,
+        start_mtime: np.datetime64,
+        end_mtime: np.datetime64,
+    ) -> xr.DataArray:
+        timeframe_data = (
+            self.footprint_unstacked.sel(Time=slice(start_time, end_time))
+            .sel(MTime=slice(start_mtime, end_mtime))
+            .stack(state=self.STATE_DIMS, measurement=self.MEASUREMENT_DIMS)
+        )
+        if self._footprint_file_city_bio.suffix == ".pkl":
+            timeframe_data.values = timeframe_data.data.todense()
+        return timeframe_data

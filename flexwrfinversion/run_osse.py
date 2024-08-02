@@ -43,6 +43,7 @@ from tqdm.auto import tqdm
 
 # flake8: noqa
 from flexwrfinversion.loaders.footprint import (
+    FlexibleFootprintLoaderAnthBio,
     FlexibleFootprintLoaderTotal,
     FootprintLoader,
     LoadFootprintAnthAndBioSectors,
@@ -73,6 +74,7 @@ from flexwrfinversion.loaders.prior_covariance import (
     TargetAsErrorWithCO_Correlation,
 )
 from flexwrfinversion.loaders.target import (
+    FlexibleTargetLoaderAnthBio,
     FlexibleTargetLoaderTotal,
     TargetLoader,
     TargetLoaderAnthAndBioSectors,

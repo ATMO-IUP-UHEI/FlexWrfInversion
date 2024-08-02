@@ -4,6 +4,7 @@ import pytest
 import xarray as xr
 
 from flexwrfinversion.loaders.footprint import (
+    FlexibleFootprintLoaderAnthBio,
     FlexibleFootprintLoaderTotal,
     LoadFootprintAnthAndBioSectors,
     LoadFootprintAnthBioCO,
@@ -99,6 +100,36 @@ def flexible_footprint_loader_total_leave_out():
         / "true"
         / "remapped_footprints_sums_3H.nc",
         leave_out=["site01"],
+    )
+
+
+@pytest.fixture
+def flexible_footprint_loader_anth_bio():
+    return FlexibleFootprintLoaderAnthBio(
+        footprint_file_city_bio=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "munich"
+        / "true"
+        / "remapped_footprints_3H.nc",
+        footprint_file_city_ant=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "munich"
+        / "true"
+        / "remapped_footprints_sums_3H.nc",
+        footprint_file_germany_bio=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "germany"
+        / "true"
+        / "remapped_footprints_vprm_co_3H.nc",
+        footprint_file_germany_ant=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "germany"
+        / "true"
+        / "remapped_footprints_sums_3H.nc",
     )
 
 
@@ -235,3 +266,33 @@ class Test_FlexibleFootprintLoaderTotal:
         assert isinstance(footprint_timeframe, xr.DataArray)
         assert len(footprint_timeframe.dims) == 2
         assert set(footprint_timeframe.dims) == {"state", "measurement"}
+
+
+class Test_FlexibleFootprintLoaderAnthBio:
+    def test_footprint(self, flexible_footprint_loader_anth_bio):
+        footprint = flexible_footprint_loader_anth_bio.footprint
+        assert footprint is not None
+        assert isinstance(footprint, xr.DataArray)
+        assert len(footprint.dims) == 2
+        assert set(footprint.dims) == {"state", "measurement"}
+        assert {"sector"}.issubset(set(footprint.coords.keys()))
+
+    def test_load_timeframe(self, flexible_footprint_loader_anth_bio):
+        footprint = flexible_footprint_loader_anth_bio.footprint
+        start_time = footprint["Time"].values[0]
+        end_time = footprint["Time"].values[3]
+        start_mtime = footprint["MTime"].values[0]
+        end_mtime = footprint["MTime"].values[4]
+
+        footprint_timeframe = flexible_footprint_loader_anth_bio.load_timeframe(
+            start_time=start_time,
+            end_time=end_time,
+            start_mtime=start_mtime,
+            end_mtime=end_mtime,
+        )
+
+        assert footprint_timeframe is not None
+        assert isinstance(footprint_timeframe, xr.DataArray)
+        assert len(footprint_timeframe.dims) == 2
+        assert set(footprint_timeframe.dims) == {"state", "measurement"}
+        assert {"sector"}.issubset(set(footprint_timeframe.coords.keys()))

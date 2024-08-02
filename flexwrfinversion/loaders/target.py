@@ -520,3 +520,109 @@ class FlexibleTargetLoaderTotal(TargetLoader):
             .sel(Time=slice(start_time, end_time))
             .stack(state=self.STATE_DIMS)
         )
+
+
+class FlexibleTargetLoaderAnthBio(TargetLoader):
+    ANTH_SECTOR_KEY = "CO2_ANT_TOTAL"
+    BIO_SECTOR_KEY = "E_CO2_VPRM"
+    TOTAL_EMISSION_KEY = "CO2_TOTAL"
+    STATE_DIMS = ["subsector", "Time", "sector"]
+
+    def __init__(
+        self,
+        target_file_city_bio: str | Path,
+        target_file_city_ant: str | Path,
+        target_file_germany_bio: str | Path,
+        target_file_germany_ant: str | Path,
+    ):
+        self._target_file_city_bio = target_file_city_bio
+        self._target_file_city_ant = target_file_city_ant
+        self._target_file_germany_bio = target_file_germany_bio
+        self._target_file_germany_ant = target_file_germany_ant
+        self._target = None
+
+    @property
+    def target(self) -> xr.DataArray:
+        if self._target is None:
+            true_emissions_city = (
+                xr.open_dataset(
+                    self._target_file_city_bio,
+                    chunks="auto",
+                )
+                .drop_dims(["x_stag", "y_stag"])
+                .fillna(0)
+            )[self.BIO_SECTOR_KEY]
+            true_emissions_germany = (
+                xr.open_dataset(
+                    self._target_file_germany_bio,
+                    chunks="auto",
+                )
+                .drop_dims(["x_stag", "y_stag"])
+                .fillna(0)
+            )[self.BIO_SECTOR_KEY]
+
+            true_emissions_sums_city = (
+                xr.open_dataset(
+                    self._target_file_city_ant,
+                    chunks="auto",
+                )
+                .drop_dims(["x_stag", "y_stag"])
+                .fillna(0)
+            )[self.ANTH_SECTOR_KEY]
+            true_emissions_sums_germany = (
+                xr.open_dataset(
+                    self._target_file_germany_ant,
+                    chunks="auto",
+                )
+                .drop_dims(["x_stag", "y_stag"])
+                .fillna(0)
+            )[self.ANTH_SECTOR_KEY]
+
+            bio_emissions = (
+                xr.concat(
+                    [
+                        true_emissions_city.assign_coords(
+                            subsector=true_emissions_city.group.values
+                        ),
+                        true_emissions_germany.assign_coords(
+                            subsector=true_emissions_germany.group.values
+                        ),
+                    ],
+                    dim="subsector",
+                )
+                .expand_dims(sector=[true_emissions_city.name])
+                .sortby("subsector")
+            )
+
+            anth_emissions = (
+                xr.concat(
+                    [
+                        true_emissions_sums_city.assign_coords(
+                            subsector=true_emissions_sums_city.group.values
+                        ),
+                        true_emissions_sums_germany.assign_coords(
+                            subsector=true_emissions_sums_germany.group.values
+                        ),
+                    ],
+                    dim="subsector",
+                )
+                .expand_dims(sector=[true_emissions_sums_city.name])
+                .sortby("subsector")
+            )
+
+            self._target = (
+                xr.concat([bio_emissions, anth_emissions], dim="sector")
+                .stack(state=self.STATE_DIMS)
+                .astype(np.float32)
+                .compute()
+            )
+        return self._target
+
+    def load_timeframe(
+        self, start_time: np.datetime64, end_time: np.datetime64
+    ) -> xr.DataArray:
+        return (
+            self.target.unstack()
+            .sel(Time=slice(start_time, end_time))
+            .stack(state=self.STATE_DIMS)
+        )
