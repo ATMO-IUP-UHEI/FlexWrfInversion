@@ -28,6 +28,7 @@ n_stations: #                   # Number of stations to use
 output_dir: ''                  # Directory to save output
 output_name: ''                 # Name of the output file
 (permutation_seed: #)           # Seed for the permutation (optional)
+(start_index: #)                # Start index for the permutation (optional)
 ```
 """
 
@@ -281,6 +282,9 @@ def main(args):
     for i, mplace_values in tqdm(
         enumerate(mplace_value_permutations), total=len(mplace_value_permutations)
     ):
+        if "start_index" in config:
+            if i < config["start_index"]:
+                continue
         dates = np.arange(
             prior_loader.prior.Time[0].values,
             prior_loader.prior.Time[-1].values + np.timedelta64(1, "D"),
