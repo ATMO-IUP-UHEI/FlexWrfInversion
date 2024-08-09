@@ -64,6 +64,22 @@ def target_as_error_no_correlation():
 
 
 @pytest.fixture
+def target_as_error_no_correlation_with_minimum():
+    target_loader = TargetLoaderAnthAndBioSectors(
+        remapped_data_path=EXAMPLE_DIRECTORY_0 / "remapped_data",
+        season="spring",
+        city="munich",
+        prior_type="true",
+        time_resolution=3,
+    )
+    flat_prior = FlatPrior(target_loader=target_loader, value=0.1)
+    return TargetAsErrorNoCorrelation(
+        prior_loader=flat_prior,
+        minimum_error=1e-7,
+    )
+
+
+@pytest.fixture
 def target_as_error_with_co_correlation():
     target_loader = TargetLoaderAnthBioCO(
         remapped_data_path=EXAMPLE_DIRECTORY_0 / "remapped_data",
@@ -139,6 +155,30 @@ class Test_TargetAsErrorNoCorrelation:
         assert np.allclose(
             prior_std,
             np.abs(target_as_error_no_correlation.prior_loader.target_loader.target),
+        )
+
+    def test_prior_std_with_minimum(self, target_as_error_no_correlation_with_minimum):
+        prior_std = target_as_error_no_correlation_with_minimum.prior_std
+        assert prior_std is not None
+        assert isinstance(prior_std, xr.DataArray)
+        assert len(prior_std.dims) == 1
+        assert (
+            prior_std >= target_as_error_no_correlation_with_minimum._minimum_error
+        ).all()
+        assert np.allclose(
+            prior_std.where(
+                prior_std > target_as_error_no_correlation_with_minimum._minimum_error,
+                drop=True,
+            ),
+            np.abs(
+                target_as_error_no_correlation_with_minimum.prior_loader.target_loader.target  # noqa
+            ).where(
+                np.abs(
+                    target_as_error_no_correlation_with_minimum.prior_loader.target_loader.target  # noqa
+                )
+                > target_as_error_no_correlation_with_minimum._minimum_error,
+                drop=True,
+            ),
         )
 
     def test_load_timeframe(self, target_as_error_no_correlation):

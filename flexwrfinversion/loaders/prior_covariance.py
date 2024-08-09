@@ -139,14 +139,23 @@ class TargetAsErrorNoCorrelation(PriorCovarianceLoader):
     def __init__(
         self,
         prior_loader: PriorLoader,
+        minimum_error: float = None,
     ):
         super().__init__(prior_loader)
         self._prior_std = None
+        self._minimum_error = minimum_error
 
     @property
     def prior_std(self) -> xr.DataArray:
         if self._prior_std is None:
             self._prior_std = np.abs(self.prior_loader.target_loader.target)
+            if self._minimum_error is not None:
+                self._prior_std = xr.where(
+                    self._prior_std < self._minimum_error,
+                    self._minimum_error,
+                    self._prior_std,
+                )
+
         return self._prior_std
 
     def load_timeframe(
