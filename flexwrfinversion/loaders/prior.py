@@ -21,7 +21,7 @@ class PriorLoader(ABC):
     @property
     @abstractmethod
     def prior(self, *args, **kwargs) -> xr.DataArray:
-        """Load the prior data
+        """Load the prior data.
         Returns:
             xr.DataArray: The prior data as 1D array. Coordinates should be stacked
                 beforehand.
@@ -32,7 +32,11 @@ class PriorLoader(ABC):
     def load_timeframe(
         self, start_time: np.datetime64, end_time: np.datetime64
     ) -> xr.DataArray:
-        """Load the prior data
+        """Load the prior data.
+
+        Args:
+            start_time (np.datetime64): Start time of the emission timeframe
+            end_time (np.datetime64): End time of the emissions timeframe
         Returns:
             xr.DataArray: The prior data as 1D array. Coordinates should be stacked
                 beforehand.
@@ -52,6 +56,12 @@ class ShiftToBiospheric(PriorLoader):
         self,
         target_loader: TargetLoaderTotalInCity,
     ):
+        """Prior for total CO2 with haved anthropogenic emissions, compensated by doubled
+        emissions/halved uptake by the biosphere
+
+        Args:
+            target_loader (TargetLoaderTotalInCity): Target loader used in the inversion.
+        """
         super().__init__(target_loader)
         self._prior = None
 
@@ -89,6 +99,12 @@ class FlatPrior(PriorLoader):
         target_loader: TargetLoader,
         value: float = 0,
     ):
+        """Prior with flat prior emissions.
+
+        Args:
+            target_loader (TargetLoader): Target loader used in the inversions
+            value (float, optional): Value to use for prior in mol/m2/s. Defaults to 0.
+        """
         super().__init__(target_loader)
         self._value = value
         self._prior = None
@@ -123,6 +139,21 @@ class FlexiblePriorLoaderTotal_ShiftToBiospheric(PriorLoader):
         bio_emission_file_city: str | Path,
         bio_emission_file_germany: str | Path,
     ):
+        """Flexible implementation of prior that reduces anthropogenic emissions by 50%
+        and adds biogenic emissions.
+
+        Args:
+            target_loader (FlexibleTargetLoaderTotal): Target loader used in the
+                 inversion.
+            anth_emission_file_city (str | Path): Emission file for the city that contains
+                 `CO2_ANT_TOTAL`
+            anth_emission_file_germany (str | Path): Emission file for germany that
+                 contains `CO2_ANT_TOTAL`
+            bio_emission_file_city (str | Path): Emission file for the city that contains
+                 `E_CO2_VPRM`
+            bio_emission_file_germany (str | Path): Emission file for germany that
+                 contains `E_CO2_VPRM`
+        """
         super().__init__(target_loader)
         self._anth_emission_file_city = anth_emission_file_city
         self._anth_emission_file_germany = anth_emission_file_germany

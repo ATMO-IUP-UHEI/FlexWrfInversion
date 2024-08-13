@@ -48,10 +48,14 @@ class MeasurementLoader(ABC):
     def load_timeframe(
         self, start_time: np.datetime64, end_time: np.datetime64
     ) -> xr.DataArray:
-        """Load the prior data
+        """Load part of the measurements with respect measurement time.
+
+        Args:
+            start_time (np.datetime64): Start time of the measurement timeframe
+            end_time (np.datetime64): End time of the measurement timeframe
+
         Returns:
-            xr.DataArray: The prior data as 1D array. Coordinates should be stacked
-                beforehand.
+            xr.DataArray: Measurements of given timeframe.
         """
         pass
 
@@ -242,6 +246,23 @@ class FlexibleMeasurementLoaderTotal(MeasurementLoader):
         leave_out: list[str] = None,
         keep_only: list[str] = None,
     ):
+        """Flexible implementation of measurement loader to load the total CO2
+        measurements directly from files.
+
+        Args:
+            target_loader (FlexibleTargetLoaderTotal): Target loader used in the
+                 inversion.
+            footprint_loader (FlexibleFootprintLoaderTotal): Footprint loader used in the
+                 inversion.
+            measurement_file_city (str | Path): Measurement/concentration file for the
+                 city that contains the `CO2_TOTAL` field.
+            measurement_file_germany (str | Path): Measurement/concentration file for
+                 germany that contains the `CO2_TOTAL` field.
+            leave_out (list[str], optional): List of names of stations to exclude for the
+                 runs. Defaults to None.
+            keep_only (list[str], optional): List of names of station to only include
+                 these. Defaults to None.
+        """
         super().__init__(target_loader, footprint_loader)
         self._measurement_file_city = measurement_file_city
         self._measurement_file_germany = measurement_file_germany
@@ -283,7 +304,12 @@ class FlexibleMeasurementLoaderTotal(MeasurementLoader):
         return self._measurements
 
     @property
-    def unstacked_measurements(self):
+    def unstacked_measurements(self) -> xr.DataArray:
+        """Measurements in original shape.
+
+        Returns:
+            xr.DataArray: Measurements.
+        """
         if self._unstacked_measurements is None:
             self._unstacked_measurements = self.measurements.unstack()
         return self._unstacked_measurements

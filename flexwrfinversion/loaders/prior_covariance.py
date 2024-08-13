@@ -18,7 +18,7 @@ class PriorCovarianceLoader(ABC):
     @property
     @abstractmethod
     def prior_std(self) -> xr.DataArray:
-        """Load the prior data
+        """Property of prior standard deviation.
         Returns:
             xr.DataArray: The prior standard deviation data as 1D array. Unstacked
                 coordinates are supposed to be passed.
@@ -29,10 +29,14 @@ class PriorCovarianceLoader(ABC):
     def load_timeframe(
         self, start_time: np.datetime64, end_time: np.datetime64
     ) -> xr.DataArray:
-        """Load the prior data
+        """Load a timeframe of the covariance.
+
+        Args:
+            start_time (np.datetime64): Start time of the convariance timeframe
+            end_time (np.datetime64): End time of the convariance timeframe
         Returns:
-            xr.DataArray: The prior covariance data as 2D array. Coordinates should be
-                stacked beforehand.
+            xr.DataArray: The covariance as 2D array. Coordinates should be stacked
+                beforehand.
         """
         pass
 
@@ -62,6 +66,16 @@ class RelativeErrorWithSpatialCorrelation(PriorCovarianceLoader):
         spatial_correlation_path: str | Path = None,
         relative_error: float = 1,
     ):
+        """Prior covariance loader with standard deviation that is given as relative
+        error to the prior. Spatial correlation can be used if given in proper format.
+
+        Args:
+            prior_loader (ShiftToBiospheric): Prior loader used in the Inversion.
+            spatial_correlation_path (str | Path, optional): Path to file with spatial
+                 correlations. Defaults to None.
+            relative_error (float, optional): Relative error to use. `1` corresponds.
+                 to a 100% error. Defaults to 1.
+        """
         super().__init__(prior_loader)
         self._spatial_correlation_path = spatial_correlation_path
         self._relative_error = relative_error
@@ -76,6 +90,11 @@ class RelativeErrorWithSpatialCorrelation(PriorCovarianceLoader):
 
     @property
     def spatial_correlation(self) -> xr.DataArray:
+        """Full spatial correlation matrix (no temporal part included).
+
+        Returns:
+            xr.DataArray: Spatial correlation matrix.
+        """
         if self._spatial_correlation is None:
             if self._spatial_correlation_path is None:
                 spatial_coordinate_values = (
@@ -141,6 +160,12 @@ class TargetAsErrorNoCorrelation(PriorCovarianceLoader):
         prior_loader: PriorLoader,
         minimum_error: float = None,
     ):
+        """Use target values as std for the covariance. Cannot use correlation.
+
+        Args:
+            prior_loader (PriorLoader): Prior loader of the inversion.
+            minimum_error (float, optional): Minimal error to allow. Defaults to None.
+        """
         super().__init__(prior_loader)
         self._prior_std = None
         self._minimum_error = minimum_error
@@ -178,6 +203,16 @@ class TargetAsErrorWithCO_Correlation(PriorCovarianceLoader):
         anth_co_correlation: float = 0,
         spatial_correlation_path: str | Path = None,
     ):
+        """Prior covariance loader for anthropogenic and biogenic CO2 together with CO.
+        A correlation is built into the covariace between CO2_anth and CO.
+
+        Args:
+            prior_loader (PriorLoader): Prior loader used in the inversion
+            anth_co_correlation (float, optional): Correlation between anthropogenic CO2
+                 and CO emissions. Defaults to 0.
+            spatial_correlation_path (str | Path, optional): Path to the spatial
+                 correlation to be used. Defaults to None.
+        """
         super().__init__(prior_loader)
         self._anth_co_correlation = anth_co_correlation
         self._spatial_correlation_path = spatial_correlation_path
@@ -193,6 +228,7 @@ class TargetAsErrorWithCO_Correlation(PriorCovarianceLoader):
 
     @property
     def spatial_correlation(self) -> xr.DataArray:
+        """Spatial subpart of the covariance (2D)."""
         if self._spatial_correlation is None:
             if self._spatial_correlation_path is None:
                 spatial_coordinate_values = (
@@ -216,6 +252,7 @@ class TargetAsErrorWithCO_Correlation(PriorCovarianceLoader):
 
     @property
     def sector_correlation(self) -> xr.DataArray:
+        """Sector part of the correlation."""
         if self._sector_correlation is None:
             correlation = self._to_two_dimensions(
                 xr.zeros_like(

@@ -18,10 +18,14 @@ class MeasurementCovarianceLoader(ABC):
     def load_timeframe(
         self, start_time: np.datetime64, end_time: np.datetime64
     ) -> xr.DataArray:
-        """Load the measurement data
+        """Load a timeframe of the covariance.
+
+        Args:
+            start_time (np.datetime64): Start time of the convariance timeframe
+            end_time (np.datetime64): End time of the convariance timeframe
         Returns:
-            xr.DataArray: The measurement covariance data as 2D array. Coordinates should
-                 be stacked beforehand.
+            xr.DataArray: The covariance as 2D array. Coordinates should be stacked
+                beforehand.
         """
         pass
 
@@ -46,6 +50,14 @@ class MeasurementCovarianceLoader(ABC):
 
 class ConstantNoCorrelation(MeasurementCovarianceLoader):
     def __init__(self, measurement_loader: MeasurementFromFile, ppm_error: float):
+        """Covariance loader for measurements with constant standard deviation and no
+        correlation.
+
+        Args:
+            measurement_loader (MeasurementFromFile): Measurement loader used in
+                 inversion.
+            ppm_error (float): Error to apply to each measurment in ppm.
+        """
         super().__init__(measurement_loader)
         self._ppm_error = ppm_error
 
@@ -79,6 +91,15 @@ class ConstantNoCorrelationCO(MeasurementCovarianceLoader):
         ppm_error: float,
         ppb_error: float,
     ):
+        """Covariance loader for measurements with constant standard deviation for CO2
+             and CO seperately and no correlation.
+
+        Args:
+            measurement_loader (MeasurementFromFile): Measurement loader used in
+                 inversion.
+            ppm_error (float): Error to apply to each CO2 measurement in ppm.
+            ppb_error (float): Error to apply to each CO measurement in ppb.
+        """
         super().__init__(measurement_loader)
         self._ppm_error = ppm_error
         self._ppb_error = ppb_error

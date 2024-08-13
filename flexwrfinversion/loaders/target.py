@@ -29,6 +29,9 @@ class TargetLoader(ABC):
         self, start_time: np.datetime64, end_time: np.datetime64
     ) -> xr.DataArray:
         """Load the target data
+        Args:
+            start_time (np.datetime64): Start time of the emission timeframe
+            end_time (np.datetime64): End time of the emissions timeframe
         Returns:
             xr.DataArray: The target data as 1D array. Coordinates should be stacked
                 beforehand.
@@ -483,6 +486,14 @@ class FlexibleTargetLoaderTotal(TargetLoader):
         target_file_city: str | Path,
         target_file_germany: str | Path,
     ):
+        """Flexible implementation of target loader for total CO2.
+
+        Args:
+            target_file_city (str | Path): File that contatains the emission data for
+                 the city and the field `CO2_TOTAL`
+            target_file_germany (str | Path): File that contatains the emission data for
+                 germany and the field `CO2_TOTAL`
+        """
         self._target_file_city = target_file_city
         self._target_file_germany = target_file_germany
         self._target = None
@@ -535,6 +546,19 @@ class FlexibleTargetLoaderAnthBio(TargetLoader):
         target_file_germany_bio: str | Path,
         target_file_germany_ant: str | Path,
     ):
+        """Flexible implementation of target loader for laoding anthropogenic and
+        biogenic emissions.
+
+        Args:
+            target_file_city_bio (str | Path):  Emission file for the city that contains
+                 `E_CO2_VPRM`
+            target_file_city_ant (str | Path): Emission file for the city that contains
+                 `CO2_ANT_TOTAL`
+            target_file_germany_bio (str | Path): Emission file for germany that contains
+                 `E_CO2_VPRM`
+            target_file_germany_ant (str | Path): Emission file for germany that
+                 contains `CO2_ANT_TOTAL`
+        """
         self._target_file_city_bio = target_file_city_bio
         self._target_file_city_ant = target_file_city_ant
         self._target_file_germany_bio = target_file_germany_bio

@@ -18,17 +18,28 @@ class FootprintLoader(ABC):
         start_mtime: np.datetime64,
         end_mtime: np.datetime64,
     ) -> xr.DataArray:
-        """Load the footprint data
+        """Load timeframe of the data with respect emission and measurement time.
+
+        Args:
+            start_time (np.datetime64): Start time of the emission timeframe
+            end_time (np.datetime64): End time of the emission timeframe
+            start_mtime (np.datetime64): Start time of the measurement timeframe
+            end_mtime (np.datetime64): End time of the measurement timeframe
+
         Returns:
-            xr.DataArray: The footprint data as 2D array. Coordinates should be
-                stacked beforehand.
+            xr.DataArray: Loaded timeframe
         """
         pass
 
     @staticmethod
     def _open_and_prepare(
         path: Path,
-    ):
+    ) -> xr.Dataset:
+        """Opens footprint data and drops unnecessary parts.
+        Args:
+            path (Path): Path of file to open
+        Returns:
+            xr.Dataset: Prepared footprint data"""
         return (
             xr.open_dataset(
                 path,
@@ -430,6 +441,18 @@ class FlexibleFootprintLoaderTotal(FootprintLoader):
         leave_out: list[str] = None,
         keep_only: list[str] = None,
     ):
+        """Flexible implementation of footprint loader for total CO2
+
+        Args:
+            footprint_file_city (str | Path): Footprint file containing `CO2_TOTAL` field
+                 for the city domain
+            footprint_file_germany (str | Path): Footprint file containig `CO2_TOTAL`
+                 field for the germany domain
+            leave_out (list[str], optional): List of names of stations to exclude for the
+                 runs. Defaults to None.
+            keep_only (list[str], optional): List of names of station to only include
+                 these. Defaults to None.
+        """
         self._footprint_file_city = Path(footprint_file_city)
         self._footprint_file_germany = Path(footprint_file_germany)
         if leave_out is not None and keep_only is not None:
@@ -444,7 +467,12 @@ class FlexibleFootprintLoaderTotal(FootprintLoader):
         self._footprint_unstacked = None
 
     @property
-    def footprint(self):
+    def footprint(self) -> xr.DataArray:
+        """Footprint property
+
+        Returns:
+            xr.DataArray: 2D DataArray containing the loaded footprints
+        """
         if self._footprint is None:
             footprints_city = self._open_and_prepare(self._footprint_file_city)[
                 self.TOTAL_EMISSION_KEY
@@ -480,7 +508,12 @@ class FlexibleFootprintLoaderTotal(FootprintLoader):
         return self._footprint
 
     @property
-    def unstacked_footprint(self):
+    def unstacked_footprint(self) -> xr.DataArray:
+        """Unstacked footprint data
+
+        Returns:
+            xr.DataArray: N-D footprint data in original structure
+        """
         if self._footprint_unstacked is None:
             self._footprint_unstacked = self.footprint.unstack()
         return self._footprint_unstacked
@@ -536,6 +569,25 @@ class FlexibleFootprintLoaderAnthBio(FootprintLoader):
         leave_out: list[str] = None,
         keep_only: list[str] = None,
     ):
+        """Flexible implementation of footprint loader to load anthropogenic and biogenic
+        parts of the footprints
+
+        Args:
+            footprint_file_city_bio (str | Path): Footprint file for the city that
+                 contains the `E_CO2_VPRM`
+            footprint_file_city_ant (str | Path): Footprint file for the city that
+                 contains the `CO2_ANT_TOTAL`
+            footprint_file_germany_bio (str | Path): Footprint file for germany that
+                 contains the `E_CO2_VPRM`
+            footprint_file_germany_ant (str | Path): Footprint file for germany that
+                 contains the `CO2_ANT_TOTAL`
+            leave_out (list[str], optional): List of names of stations to exclude for the
+                 runs. Defaults to None.
+            keep_only (list[str], optional): List of names of station to only include
+                 these. Defaults to None.
+
+        """
+
         self._footprint_file_city_bio = Path(footprint_file_city_bio)
         self._footprint_file_city_ant = Path(footprint_file_city_ant)
         self._footprint_file_germany_bio = Path(footprint_file_germany_bio)
@@ -553,6 +605,11 @@ class FlexibleFootprintLoaderAnthBio(FootprintLoader):
 
     @property
     def footprint(self) -> xr.DataArray:
+        """Footprint property
+
+        Returns:
+            xr.DataArray: 2D DataArray containing the loaded footprints
+        """
         if self._footprint is None:
             footprints_city = self._open_and_prepare(self._footprint_file_city_bio)[
                 self.BIO_SECTOR_KEY
@@ -617,7 +674,12 @@ class FlexibleFootprintLoaderAnthBio(FootprintLoader):
         return self._footprint
 
     @property
-    def footprint_unstacked(self):
+    def footprint_unstacked(self) -> xr.DataArray:
+        """Unstacked footprint data
+
+        Returns:
+            xr.DataArray: N-D footprint data in original structure
+        """
         if self._footprint_unstacked is None:
             self._footprint_unstacked = self.footprint.unstack()
         return self._footprint_unstacked
@@ -626,6 +688,12 @@ class FlexibleFootprintLoaderAnthBio(FootprintLoader):
     def _open_and_prepare(
         path: Path,
     ):
+        """Opens footprint data and drops unnecessary parts.
+        Args:
+            path (Path): Path of file to open
+        Returns:
+            xr.Dataset: Prepared footprint data
+        """
         if path.suffix == ".nc":
             data = (
                 xr.open_dataset(
