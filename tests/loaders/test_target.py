@@ -5,6 +5,7 @@ import xarray as xr
 
 from flexwrfinversion.loaders.target import (
     FlexibleTargetLoaderAnthBio,
+    FlexibleTargetLoaderAnthBioCo,
     FlexibleTargetLoaderTotal,
     TargetLoaderAnthAndBioSectors,
     TargetLoaderAnthBioCO,
@@ -92,6 +93,48 @@ def flexible_target_loader_anth_bio():
         / "germany"
         / "true"
         / "remapped_true_emissions_sums_3H.nc",
+    )
+
+
+@pytest.fixture
+def flexible_target_loader_anth_bio_co():
+    return FlexibleTargetLoaderAnthBioCo(
+        target_file_city_bio=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "munich"
+        / "true"
+        / "remapped_true_emissions_3H.nc",
+        target_file_city_ant=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "munich"
+        / "true"
+        / "remapped_true_emissions_sums_3H.nc",
+        target_file_city_co=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "munich"
+        / "true"
+        / "remapped_true_emissions_3H.nc",
+        target_file_germany_bio=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "germany"
+        / "true"
+        / "remapped_true_emissions_vprm_co_3H.nc",
+        target_file_germany_ant=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "germany"
+        / "true"
+        / "remapped_true_emissions_sums_3H.nc",
+        target_file_germany_co=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "germany"
+        / "true"
+        / "remapped_true_emissions_vprm_co_3H.nc",
     )
 
 
@@ -222,6 +265,31 @@ class Test_FlexibleTargetLoaderAnthBio:
         end_time = target["Time"].values[3]
 
         target_timeframe = flexible_target_loader_anth_bio.load_timeframe(
+            start_time=start_time,
+            end_time=end_time,
+        )
+
+        assert target_timeframe is not None
+        assert isinstance(target_timeframe, xr.DataArray)
+        assert len(target_timeframe.dims) == 1
+        assert set(target_timeframe.dims) == {"state"}
+
+
+class Test_FlexibleTargetLoaderAnthBioCo:
+    def test_target(self, flexible_target_loader_anth_bio_co):
+        target = flexible_target_loader_anth_bio_co.target
+        assert target is not None
+        assert isinstance(target, xr.DataArray)
+        assert len(target.dims) == 1
+        assert set(target.dims) == {"state"}
+        assert set(target.unstack().dims) == {"subsector", "sector", "Time"}
+
+    def test_load_timeframe(self, flexible_target_loader_anth_bio_co):
+        target = flexible_target_loader_anth_bio_co.target
+        start_time = target["Time"].values[0]
+        end_time = target["Time"].values[3]
+
+        target_timeframe = flexible_target_loader_anth_bio_co.load_timeframe(
             start_time=start_time,
             end_time=end_time,
         )

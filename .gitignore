@@ -173,3 +173,14 @@ tests/configs/test4.yaml
 tests/configs/test5.yaml
 tests/configs/test6.yaml
 tests/configs/test7.yaml
+tests/configs/test8.yaml
+tests/configs/submit_test7.sh
+tests/configs/submit_test8.sh
+tests/configs/test7.e12751485
+tests/configs/test7.e12760206
+tests/configs/test7.o12751485
+tests/configs/test7.o12760206
+tests/configs/test8.e12751486
+tests/configs/test8.e12751811
+tests/configs/test8.o12751486
+tests/configs/test8.o12751811

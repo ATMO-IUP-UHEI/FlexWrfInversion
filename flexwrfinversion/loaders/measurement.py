@@ -8,6 +8,7 @@ import numpy as np
 import xarray as xr
 
 from flexwrfinversion.loaders.footprint import (
+    FlexibleFootprintLoaderAnthBioCo,
     FlexibleFootprintLoaderTotal,
     FootprintLoader,
     LoadFootprintAnthBioCO,
@@ -297,6 +298,117 @@ class FlexibleMeasurementLoaderTotal(MeasurementLoader):
                 self._measurements.stack(
                     measurement=self.footprint_loader.MEASUREMENT_DIMS
                 )
+                .astype(np.float32)
+                .compute()
+            )
+
+        return self._measurements
+
+    @property
+    def unstacked_measurements(self) -> xr.DataArray:
+        """Measurements in original shape.
+
+        Returns:
+            xr.DataArray: Measurements.
+        """
+        if self._unstacked_measurements is None:
+            self._unstacked_measurements = self.measurements.unstack()
+        return self._unstacked_measurements
+
+    def load_timeframe(
+        self, start_time: np.datetime64, end_time: np.datetime64
+    ) -> xr.DataArray:
+        return self.unstacked_measurements.sel(MTime=slice(start_time, end_time)).stack(
+            measurement=self.footprint_loader.MEASUREMENT_DIMS
+        )
+
+
+class FlexibleMeasurementLoaderTotalCo(MeasurementLoader):
+    TOTAL_EMISSION_KEY = "CO2_TOTAL"
+
+    def __init__(
+        self,
+        target_loader: TargetLoader,
+        footprint_loader: FlexibleFootprintLoaderAnthBioCo,
+        measurement_file_city_co2: str | Path,  # THIS IS THE LAST THING THAT I ADDED
+        measurement_file_city_co: str | Path,
+        measurement_file_germany_co2: str | Path,
+        measurement_file_germany_co: str | Path,
+        leave_out: list[str] = None,
+        keep_only: list[str] = None,
+    ):
+        """Flexible implementation of measurement loader to load the total CO2
+        measurements directly from files.
+
+        Args:
+            target_loader (FlexibleTargetLoaderTotal): Target loader used in the
+                 inversion.
+            footprint_loader (FlexibleFootprintLoaderAnthBioCo): Footprint loader used in
+                 the inversion.
+            measurement_file_city (str | Path): Measurement/concentration file for the
+                 city that contains the `CO2_TOTAL` and `E_CO` field.
+            measurement_file_germany (str | Path): Measurement/concentration file for
+                 germany that contains the `CO2_TOTAL` and `E_CO` field.
+            leave_out (list[str], optional): List of names of stations to exclude for the
+                 runs. Defaults to None.
+            keep_only (list[str], optional): List of names of station to only include
+                 these. Defaults to None.
+        """
+        super().__init__(target_loader, footprint_loader)
+        self._measurement_file_city_co2 = measurement_file_city_co2
+        self._measurement_file_city_co = measurement_file_city_co
+        self._measurement_file_germany_co2 = measurement_file_germany_co2
+        self._measurement_file_germany_co = measurement_file_germany_co
+        if leave_out is not None and keep_only is not None:
+            raise ValueError("leave_out and keep_only cannot be used together.")
+        elif leave_out is not None:
+            leave_out = np.char.encode(np.array(leave_out, dtype=str))
+        elif keep_only is not None:
+            keep_only = np.char.encode(np.array(keep_only, dtype=str))
+        self._leave_out = leave_out
+        self._keep_only = keep_only
+        self._measurements = None
+        self._unstacked_measurements = None
+
+    @property
+    def measurements(self):
+        if self._measurements is None:
+            co2_measurements = (
+                xr.open_dataset(self._measurement_file_city_co2)[
+                    self.TOTAL_EMISSION_KEY
+                ]
+                + xr.open_dataset(self._measurement_file_germany_co2)[
+                    self.TOTAL_EMISSION_KEY
+                ]
+            ).expand_dims(species=["CO2"])
+
+            co_measurements = (
+                xr.open_dataset(self._measurement_file_city_co)[
+                    self.footprint_loader.CO_SECTOR_KEY
+                ]
+                + xr.open_dataset(self._measurement_file_germany_co)[
+                    self.footprint_loader.CO_SECTOR_KEY
+                ]
+            ).expand_dims(species=["CO"])
+
+            measurements = xr.concat(
+                [
+                    co2_measurements,
+                    co_measurements,
+                ],
+                dim="species",
+            )
+
+            if self._leave_out is not None:
+                measurements = measurements.isel(
+                    MPlace=~np.isin(measurements.MPlace.values, self._leave_out)
+                )
+            if self._keep_only is not None:
+                measurements = measurements.sel(MPlace=self._keep_only)
+
+            self._measurements = (
+                measurements.sortby("species")
+                .stack(measurement=self.footprint_loader.MEASUREMENT_DIMS)
                 .astype(np.float32)
                 .compute()
             )

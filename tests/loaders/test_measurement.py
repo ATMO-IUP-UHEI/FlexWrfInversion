@@ -4,12 +4,14 @@ import pytest
 import xarray as xr
 
 from flexwrfinversion.loaders.footprint import (
+    FlexibleFootprintLoaderAnthBioCo,
     FlexibleFootprintLoaderTotal,
     LoadFootprintAnthBioCO,
     LoadFootprintForTotalInCity,
 )
 from flexwrfinversion.loaders.measurement import (
     FlexibleMeasurementLoaderTotal,
+    FlexibleMeasurementLoaderTotalCo,
     MeasurementFromFile,
     MeasurementFromFileCO,
 )
@@ -204,6 +206,88 @@ def flexible_measurement_loader_total_leave_out():
     )
 
 
+@pytest.fixture
+def flexible_measurement_loader_total_co():
+    return FlexibleMeasurementLoaderTotalCo(
+        target_loader=FlexibleTargetLoaderTotal(
+            EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "munich"
+            / "true"
+            / "remapped_true_emissions_sums_3H.nc",
+            EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "germany"
+            / "true"
+            / "remapped_true_emissions_sums_3H.nc",
+        ),
+        footprint_loader=FlexibleFootprintLoaderAnthBioCo(
+            footprint_file_city_bio=EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "munich"
+            / "true"
+            / "remapped_footprints_3H.nc",
+            footprint_file_city_ant=EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "munich"
+            / "true"
+            / "remapped_footprints_sums_3H.nc",
+            footprint_file_city_co=EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "munich"
+            / "true"
+            / "remapped_footprints_3H.nc",
+            footprint_file_germany_bio=EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "germany"
+            / "true"
+            / "remapped_footprints_vprm_co_3H.nc",
+            footprint_file_germany_ant=EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "germany"
+            / "true"
+            / "remapped_footprints_sums_3H.nc",
+            footprint_file_germany_co=EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "germany"
+            / "true"
+            / "remapped_footprints_vprm_co_3H.nc",
+        ),
+        measurement_file_city_co2=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "munich"
+        / "true"
+        / "true_concentrations_sums.nc",
+        measurement_file_city_co=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "munich"
+        / "true"
+        / "true_concentrations.nc",
+        measurement_file_germany_co2=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "germany"
+        / "true"
+        / "true_concentrations_sums.nc",
+        measurement_file_germany_co=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "germany"
+        / "true"
+        / "true_concentrations_vprm_co.nc",
+    )
+
+
 class Test_MeasurementFromFile:
     def test_measurements(self, measurement_from_file):
         measurements = measurement_from_file.measurements
@@ -301,3 +385,33 @@ class Test_FlexibleMeasurementLoaderTotal:
         assert isinstance(measurements_timeframe, xr.DataArray)
         assert len(measurements_timeframe.dims) == 1
         assert set(measurements_timeframe.dims) == {"measurement"}
+
+
+class Test_FlexibleMeasurementLoaderTotalCo:
+    def test_measurements(self, flexible_measurement_loader_total_co):
+        measurements = flexible_measurement_loader_total_co.measurements
+        assert measurements is not None
+        assert isinstance(measurements, xr.DataArray)
+        assert len(measurements.dims) == 1
+        assert set(measurements.dims) == {"measurement"}
+        assert set(measurements.unstack().dims) == {"species", "MPlace", "MTime"}
+
+    def test_load_timeframe(self, flexible_measurement_loader_total_co):
+        measurements = flexible_measurement_loader_total_co.measurements
+        start_mtime = measurements["MTime"].values[0]
+        end_mtime = measurements["MTime"].values[4]
+
+        measurements_timeframe = flexible_measurement_loader_total_co.load_timeframe(
+            start_time=start_mtime,
+            end_time=end_mtime,
+        )
+
+        assert measurements_timeframe is not None
+        assert isinstance(measurements_timeframe, xr.DataArray)
+        assert len(measurements_timeframe.dims) == 1
+        assert set(measurements_timeframe.dims) == {"measurement"}
+        assert set(measurements_timeframe.unstack().dims) == {
+            "species",
+            "MPlace",
+            "MTime",
+        }

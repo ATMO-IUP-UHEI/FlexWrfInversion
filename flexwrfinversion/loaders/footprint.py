@@ -658,6 +658,8 @@ class FlexibleFootprintLoaderAnthBio(FootprintLoader):
                 .sortby("subsector")
             )
 
+            self._footprint = xr.concat([bio_footprints, anth_footprints], dim="sector")
+
             if self._leave_out is not None:
                 self._footprint = self._footprint.isel(
                     MPlace=~np.isin(self._footprint.MPlace.values, self._leave_out)
@@ -666,10 +668,12 @@ class FlexibleFootprintLoaderAnthBio(FootprintLoader):
                 self._footprint = self._footprint.sel(MPlace=self._keep_only)
 
             self._footprint = (
-                xr.concat([bio_footprints, anth_footprints], dim="sector")
-                .stack(state=self.STATE_DIMS, measurement=self.MEASUREMENT_DIMS)
+                self._footprint.stack(
+                    state=self.STATE_DIMS, measurement=self.MEASUREMENT_DIMS
+                )
                 .astype(np.float32)
                 .compute()
+                .fillna(0)
             )
         return self._footprint
 
@@ -724,3 +728,196 @@ class FlexibleFootprintLoaderAnthBio(FootprintLoader):
         if self._footprint_file_city_bio.suffix == ".pkl":
             timeframe_data.values = timeframe_data.data.todense()
         return timeframe_data
+
+
+class FlexibleFootprintLoaderAnthBioCo(FootprintLoader):
+    ANTH_SECTOR_KEY = "CO2_ANT_TOTAL"
+    BIO_SECTOR_KEY = "E_CO2_VPRM"
+    CO_SECTOR_KEY = "E_CO"
+    STATE_DIMS = ["subsector", "Time", "sector"]
+    MEASUREMENT_DIMS = ["MTime", "MPlace", "species"]
+
+    def __init__(
+        self,
+        footprint_file_city_bio: str | Path,
+        footprint_file_city_ant: str | Path,
+        footprint_file_city_co: str | Path,
+        footprint_file_germany_bio: str | Path,
+        footprint_file_germany_ant: str | Path,
+        footprint_file_germany_co: str | Path,
+        leave_out: list[str] = None,
+        keep_only: list[str] = None,
+    ):
+        self._footprint_file_city_bio = Path(footprint_file_city_bio)
+        self._footprint_file_city_ant = Path(footprint_file_city_ant)
+        self._footprint_file_city_co = Path(footprint_file_city_co)
+        self._footprint_file_germany_bio = Path(footprint_file_germany_bio)
+        self._footprint_file_germany_ant = Path(footprint_file_germany_ant)
+        self._footprint_file_germany_co = Path(footprint_file_germany_co)
+        if leave_out is not None and keep_only is not None:
+            raise ValueError("leave_out and keep_only cannot be used together.")
+        elif leave_out is not None:
+            leave_out = np.char.encode(np.array(leave_out, dtype=str))
+        elif keep_only is not None:
+            keep_only = np.char.encode(np.array(keep_only, dtype=str))
+        self._leave_out = leave_out
+        self._keep_only = keep_only
+        self._footprint = None
+        self._footprint_unstacked = None
+
+    @property
+    def footprint(self):
+        if self._footprint is None:
+            footprints_city_bio = self._open_and_prepare(self._footprint_file_city_bio)[
+                self.BIO_SECTOR_KEY
+            ]
+            footprints_city_ant = self._open_and_prepare(self._footprint_file_city_ant)[
+                self.ANTH_SECTOR_KEY
+            ]
+            footprints_city_co = self._open_and_prepare(self._footprint_file_city_co)[
+                self.CO_SECTOR_KEY
+            ]
+
+            footprints_germany_bio = self._open_and_prepare(
+                self._footprint_file_germany_bio
+            )[self.BIO_SECTOR_KEY]
+            footprints_germany_ant = self._open_and_prepare(
+                self._footprint_file_germany_ant
+            )[self.ANTH_SECTOR_KEY]
+            footprints_germany_co = self._open_and_prepare(
+                self._footprint_file_germany_co
+            )[self.CO_SECTOR_KEY]
+
+            bio_footprints = (
+                xr.concat(
+                    [
+                        footprints_city_bio.assign_coords(
+                            subsector=footprints_city_bio.group.values
+                        ),
+                        footprints_germany_bio.assign_coords(
+                            subsector=footprints_germany_bio.group.values
+                        ),
+                    ],
+                    dim="subsector",
+                )
+                .expand_dims(sector=[footprints_city_bio.name], species=["CO2"])
+                .sortby("subsector")
+            )
+
+            anth_footprints = (
+                xr.concat(
+                    [
+                        footprints_city_ant.assign_coords(
+                            subsector=footprints_city_ant.group.values
+                        ),
+                        footprints_germany_ant.assign_coords(
+                            subsector=footprints_germany_ant.group.values
+                        ),
+                    ],
+                    dim="subsector",
+                )
+                .expand_dims(sector=[footprints_city_ant.name], species=["CO2"])
+                .sortby("subsector")
+            )
+
+            co_footprints = (
+                xr.concat(
+                    [
+                        footprints_city_co.assign_coords(
+                            subsector=footprints_city_co.group.values
+                        ),
+                        footprints_germany_co.assign_coords(
+                            subsector=footprints_germany_co.group.values
+                        ),
+                    ],
+                    dim="subsector",
+                )
+                .expand_dims(sector=[footprints_city_co.name], species=["CO"])
+                .sortby("subsector")
+            )
+
+            bio_species_dummy = xr.zeros_like(bio_footprints).assign_coords(
+                species=["CO"]
+            )
+            anth_species_dummy = xr.zeros_like(anth_footprints).assign_coords(
+                species=["CO"]
+            )
+            co_species_dummy = xr.zeros_like(co_footprints).assign_coords(
+                species=["CO2"]
+            )
+
+            bio_footprints = xr.concat(
+                [bio_footprints, bio_species_dummy], dim="species"
+            )
+            anth_footprints = xr.concat(
+                [anth_footprints, anth_species_dummy], dim="species"
+            )
+            co_footprints = xr.concat([co_species_dummy, co_footprints], dim="species")
+
+            self._footprint = xr.concat(
+                [bio_footprints, anth_footprints, co_footprints], dim="sector"
+            )
+
+            if self._leave_out is not None:
+                self._footprint = self._footprint.isel(
+                    MPlace=~np.isin(self._footprint.MPlace.values, self._leave_out)
+                )
+            if self._keep_only is not None:
+                self._footprint = self._footprint.sel(MPlace=self._keep_only)
+
+            self._footprint = (
+                self._footprint.sortby("species")
+                .sortby("sector")
+                .stack(state=self.STATE_DIMS, measurement=self.MEASUREMENT_DIMS)
+                .astype(np.float32)
+                .compute()
+                .fillna(0)
+            )
+        return self._footprint
+
+    @property
+    def footprint_unstacked(self):
+        if self._footprint_unstacked is None:
+            self._footprint_unstacked = self.footprint.unstack()
+        return self._footprint_unstacked
+
+    def load_timeframe(
+        self,
+        start_time: np.datetime64,
+        end_time: np.datetime64,
+        start_mtime: np.datetime64,
+        end_mtime: np.datetime64,
+    ) -> xr.DataArray:
+        timeframe_data = (
+            self.footprint_unstacked.sel(Time=slice(start_time, end_time))
+            .sel(MTime=slice(start_mtime, end_mtime))
+            .stack(state=self.STATE_DIMS, measurement=self.MEASUREMENT_DIMS)
+        )
+        if self._footprint_file_city_bio.suffix == ".pkl":
+            timeframe_data.values = timeframe_data.data.todense()
+        return timeframe_data
+
+    @staticmethod
+    def _open_and_prepare(
+        path: Path,
+    ):
+        """Opens footprint data and drops unnecessary parts.
+        Args:
+            path (Path): Path of file to open
+        Returns:
+            xr.Dataset: Prepared footprint data
+        """
+        if path.suffix == ".nc":
+            data = (
+                xr.open_dataset(
+                    path,
+                    chunks="auto",
+                )
+                .drop_dims(["x_stag", "y_stag"])
+                .fillna(0)
+            )
+
+        elif path.suffix == ".pkl":
+            with open(path, "rb") as f:
+                data = pickle.load(f)
+        return data
