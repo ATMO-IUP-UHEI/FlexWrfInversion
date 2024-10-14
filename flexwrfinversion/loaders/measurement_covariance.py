@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 import xarray as xr
 
-from flexwrfinversion.loaders.measurement import MeasurementFromFile, MeasurementLoader
+from flexwrfinversion.loaders.measurement import MeasurementLoader
 
 
 class MeasurementCovarianceLoader(ABC):
@@ -49,12 +49,12 @@ class MeasurementCovarianceLoader(ABC):
 
 
 class ConstantNoCorrelation(MeasurementCovarianceLoader):
-    def __init__(self, measurement_loader: MeasurementFromFile, ppm_error: float):
+    def __init__(self, measurement_loader: MeasurementLoader, ppm_error: float):
         """Covariance loader for measurements with constant standard deviation and no
         correlation.
 
         Args:
-            measurement_loader (MeasurementFromFile): Measurement loader used in
+            measurement_loader (MeasurementLoader): Measurement loader used in
                  inversion.
             ppm_error (float): Error to apply to each measurment in ppm.
         """
@@ -87,7 +87,7 @@ class ConstantNoCorrelation(MeasurementCovarianceLoader):
 class ConstantNoCorrelationCO(MeasurementCovarianceLoader):
     def __init__(
         self,
-        measurement_loader: MeasurementFromFile,
+        measurement_loader: MeasurementLoader,
         ppm_error: float,
         ppb_error: float,
     ):

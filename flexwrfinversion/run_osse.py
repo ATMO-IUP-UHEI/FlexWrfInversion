@@ -48,15 +48,10 @@ from flexwrfinversion.loaders.footprint import (
     FlexibleFootprintLoaderAnthBioCo,
     FlexibleFootprintLoaderTotal,
     FootprintLoader,
-    LoadFootprintAnthAndBioSectors,
-    LoadFootprintAnthBioCO,
-    LoadFootprintForTotalInCity,
 )
 from flexwrfinversion.loaders.measurement import (
     FlexibleMeasurementLoaderTotal,
     FlexibleMeasurementLoaderTotalCo,
-    MeasurementFromFile,
-    MeasurementFromFileCO,
     MeasurementLoader,
 )
 from flexwrfinversion.loaders.measurement_covariance import (
@@ -68,7 +63,6 @@ from flexwrfinversion.loaders.prior import (
     FlatPrior,
     FlexiblePriorLoaderTotal_ShiftToBiospheric,
     PriorLoader,
-    ShiftToBiospheric,
 )
 from flexwrfinversion.loaders.prior_covariance import (
     PriorCovarianceLoader,
@@ -81,9 +75,6 @@ from flexwrfinversion.loaders.target import (
     FlexibleTargetLoaderAnthBioCo,
     FlexibleTargetLoaderTotal,
     TargetLoader,
-    TargetLoaderAnthAndBioSectors,
-    TargetLoaderAnthBioCO,
-    TargetLoaderTotalInCity,
 )
 
 # flake8: noqa

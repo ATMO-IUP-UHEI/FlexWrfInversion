@@ -7,7 +7,10 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
-from flexwrfinversion.loaders.prior import PriorLoader, ShiftToBiospheric
+from flexwrfinversion.loaders.prior import (
+    FlexiblePriorLoaderTotal_ShiftToBiospheric,
+    PriorLoader,
+)
 
 
 class PriorCovarianceLoader(ABC):
@@ -62,7 +65,7 @@ class PriorCovarianceLoader(ABC):
 class RelativeErrorWithSpatialCorrelation(PriorCovarianceLoader):
     def __init__(
         self,
-        prior_loader: ShiftToBiospheric,
+        prior_loader: FlexiblePriorLoaderTotal_ShiftToBiospheric,
         spatial_correlation_path: str | Path = None,
         relative_error: float = 1,
     ):
@@ -70,7 +73,8 @@ class RelativeErrorWithSpatialCorrelation(PriorCovarianceLoader):
         error to the prior. Spatial correlation can be used if given in proper format.
 
         Args:
-            prior_loader (ShiftToBiospheric): Prior loader used in the Inversion.
+            prior_loader (FlexiblePriorLoaderTotal_ShiftToBiospheric): Prior loader used
+                 in the Inversion.
             spatial_correlation_path (str | Path, optional): Path to file with spatial
                  correlations. Defaults to None.
             relative_error (float, optional): Relative error to use. `1` corresponds.
