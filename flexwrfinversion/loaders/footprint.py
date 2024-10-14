@@ -440,6 +440,7 @@ class FlexibleFootprintLoaderTotal(FootprintLoader):
         footprint_file_germany: str | Path,
         leave_out: list[str] = None,
         keep_only: list[str] = None,
+        times_of_day: list[int] = None,
     ):
         """Flexible implementation of footprint loader for total CO2
 
@@ -452,6 +453,8 @@ class FlexibleFootprintLoaderTotal(FootprintLoader):
                  runs. Defaults to None.
             keep_only (list[str], optional): List of names of station to only include
                  these. Defaults to None.
+            times_of_day (list[int], optional): List of hours of the day to include in the
+                 data. Defaults to None.
         """
         self._footprint_file_city = Path(footprint_file_city)
         self._footprint_file_germany = Path(footprint_file_germany)
@@ -463,6 +466,7 @@ class FlexibleFootprintLoaderTotal(FootprintLoader):
             keep_only = np.char.encode(np.array(keep_only, dtype=str))
         self._leave_out = leave_out
         self._keep_only = keep_only
+        self._times_of_day = times_of_day
         self._footprint = None
         self._footprint_unstacked = None
 
@@ -498,6 +502,11 @@ class FlexibleFootprintLoaderTotal(FootprintLoader):
                 )
             if self._keep_only is not None:
                 self._footprint = self._footprint.sel(MPlace=self._keep_only)
+
+            if self._times_of_day is not None:
+                self._footprint = self._footprint.isel(
+                    MTime=self._footprint.MTime.dt.hour.isin(self._times_of_day)
+                )
 
             self._footprint = (
                 self._footprint.sortby("subsector")
@@ -568,6 +577,7 @@ class FlexibleFootprintLoaderAnthBio(FootprintLoader):
         footprint_file_germany_ant: str | Path,
         leave_out: list[str] = None,
         keep_only: list[str] = None,
+        times_of_day: list[int] = None,
     ):
         """Flexible implementation of footprint loader to load anthropogenic and biogenic
         parts of the footprints
@@ -585,6 +595,8 @@ class FlexibleFootprintLoaderAnthBio(FootprintLoader):
                  runs. Defaults to None.
             keep_only (list[str], optional): List of names of station to only include
                  these. Defaults to None.
+            times_of_day (list[int], optional): List of hours of the day to include in the
+                 data. Defaults to None.
 
         """
 
@@ -600,6 +612,7 @@ class FlexibleFootprintLoaderAnthBio(FootprintLoader):
             keep_only = np.char.encode(np.array(keep_only, dtype=str))
         self._leave_out = leave_out
         self._keep_only = keep_only
+        self._times_of_day = times_of_day
         self._footprint = None
         self._footprint_unstacked = None
 
@@ -666,6 +679,11 @@ class FlexibleFootprintLoaderAnthBio(FootprintLoader):
                 )
             if self._keep_only is not None:
                 self._footprint = self._footprint.sel(MPlace=self._keep_only)
+
+            if self._times_of_day is not None:
+                self._footprint = self._footprint.isel(
+                    MTime=self._footprint.MTime.dt.hour.isin(self._times_of_day)
+                )
 
             self._footprint = (
                 self._footprint.stack(
@@ -747,6 +765,7 @@ class FlexibleFootprintLoaderAnthBioCo(FootprintLoader):
         footprint_file_germany_co: str | Path,
         leave_out: list[str] = None,
         keep_only: list[str] = None,
+        times_of_day: list[int] = None,
     ):
         self._footprint_file_city_bio = Path(footprint_file_city_bio)
         self._footprint_file_city_ant = Path(footprint_file_city_ant)
@@ -762,6 +781,7 @@ class FlexibleFootprintLoaderAnthBioCo(FootprintLoader):
             keep_only = np.char.encode(np.array(keep_only, dtype=str))
         self._leave_out = leave_out
         self._keep_only = keep_only
+        self._times_of_day = times_of_day
         self._footprint = None
         self._footprint_unstacked = None
 
@@ -864,6 +884,11 @@ class FlexibleFootprintLoaderAnthBioCo(FootprintLoader):
                 )
             if self._keep_only is not None:
                 self._footprint = self._footprint.sel(MPlace=self._keep_only)
+
+            if self._times_of_day is not None:
+                self._footprint = self._footprint.isel(
+                    MTime=self._footprint.MTime.dt.hour.isin(self._times_of_day)
+                )
 
             self._footprint = (
                 self._footprint.sortby("species")

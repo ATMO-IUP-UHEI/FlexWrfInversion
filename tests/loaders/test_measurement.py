@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import numpy as np
 import pytest
 import xarray as xr
 
@@ -207,6 +208,102 @@ def flexible_measurement_loader_total_leave_out():
 
 
 @pytest.fixture
+def flexible_measurement_loader_total_times_of_day():
+    return FlexibleMeasurementLoaderTotal(
+        target_loader=FlexibleTargetLoaderTotal(
+            EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "munich"
+            / "true"
+            / "remapped_true_emissions_sums_3H.nc",
+            EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "germany"
+            / "true"
+            / "remapped_true_emissions_sums_3H.nc",
+        ),
+        footprint_loader=FlexibleFootprintLoaderTotal(
+            EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "munich"
+            / "true"
+            / "remapped_footprints_sums_3H.nc",
+            EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "germany"
+            / "true"
+            / "remapped_footprints_sums_3H.nc",
+            times_of_day=[0, 4],
+        ),
+        measurement_file_city=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "munich"
+        / "true"
+        / "true_concentrations_sums.nc",
+        measurement_file_germany=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "germany"
+        / "true"
+        / "true_concentrations_sums.nc",
+        times_of_day=[0, 4],
+    )
+
+
+@pytest.fixture
+def flexible_measurement_loader_total_noise():
+    np.random.seed(0)
+    return FlexibleMeasurementLoaderTotal(
+        target_loader=FlexibleTargetLoaderTotal(
+            EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "munich"
+            / "true"
+            / "remapped_true_emissions_sums_3H.nc",
+            EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "germany"
+            / "true"
+            / "remapped_true_emissions_sums_3H.nc",
+        ),
+        footprint_loader=FlexibleFootprintLoaderTotal(
+            EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "munich"
+            / "true"
+            / "remapped_footprints_sums_3H.nc",
+            EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "germany"
+            / "true"
+            / "remapped_footprints_sums_3H.nc",
+        ),
+        measurement_file_city=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "munich"
+        / "true"
+        / "true_concentrations_sums.nc",
+        measurement_file_germany=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "germany"
+        / "true"
+        / "true_concentrations_sums.nc",
+        ppm_noise=2,
+    )
+
+
+@pytest.fixture
 def flexible_measurement_loader_total_co():
     return FlexibleMeasurementLoaderTotalCo(
         target_loader=FlexibleTargetLoaderTotal(
@@ -285,6 +382,92 @@ def flexible_measurement_loader_total_co():
         / "germany"
         / "true"
         / "true_concentrations_vprm_co.nc",
+    )
+
+
+@pytest.fixture
+def flexible_measurement_loader_total_co_noise():
+    # set random seed
+    np.random.seed(1)
+    return FlexibleMeasurementLoaderTotalCo(
+        target_loader=FlexibleTargetLoaderTotal(
+            EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "munich"
+            / "true"
+            / "remapped_true_emissions_sums_3H.nc",
+            EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "germany"
+            / "true"
+            / "remapped_true_emissions_sums_3H.nc",
+        ),
+        footprint_loader=FlexibleFootprintLoaderAnthBioCo(
+            footprint_file_city_bio=EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "munich"
+            / "true"
+            / "remapped_footprints_3H.nc",
+            footprint_file_city_ant=EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "munich"
+            / "true"
+            / "remapped_footprints_sums_3H.nc",
+            footprint_file_city_co=EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "munich"
+            / "true"
+            / "remapped_footprints_3H.nc",
+            footprint_file_germany_bio=EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "germany"
+            / "true"
+            / "remapped_footprints_vprm_co_3H.nc",
+            footprint_file_germany_ant=EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "germany"
+            / "true"
+            / "remapped_footprints_sums_3H.nc",
+            footprint_file_germany_co=EXAMPLE_DIRECTORY_0
+            / "remapped_data"
+            / "spring"
+            / "germany"
+            / "true"
+            / "remapped_footprints_vprm_co_3H.nc",
+        ),
+        measurement_file_city_co2=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "munich"
+        / "true"
+        / "true_concentrations_sums.nc",
+        measurement_file_city_co=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "munich"
+        / "true"
+        / "true_concentrations.nc",
+        measurement_file_germany_co2=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "germany"
+        / "true"
+        / "true_concentrations_sums.nc",
+        measurement_file_germany_co=EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "germany"
+        / "true"
+        / "true_concentrations_vprm_co.nc",
+        ppm_noise=2,
+        ppb_noise=2,
     )
 
 
@@ -371,6 +554,12 @@ class Test_FlexibleMeasurementLoaderTotal:
             assert set(measurements.dims) == {"measurement"}
             assert set(measurements.MPlace.values) == {b"site00"}
 
+    def test_measurements_times_of_day(
+        self, flexible_measurement_loader_total_times_of_day
+    ):
+        measurements = flexible_measurement_loader_total_times_of_day.measurements
+        assert set(measurements.MTime.dt.hour.values) == {0, 4}
+
     def test_load_timeframe(self, flexible_measurement_loader_total):
         measurements = flexible_measurement_loader_total.measurements
         start_mtime = measurements["MTime"].values[0]
@@ -385,6 +574,28 @@ class Test_FlexibleMeasurementLoaderTotal:
         assert isinstance(measurements_timeframe, xr.DataArray)
         assert len(measurements_timeframe.dims) == 1
         assert set(measurements_timeframe.dims) == {"measurement"}
+
+    def test_load_time_frame_noise(
+        self, flexible_measurement_loader_total, flexible_measurement_loader_total_noise
+    ):
+        measurements = flexible_measurement_loader_total.load_timeframe(
+            start_time=flexible_measurement_loader_total.measurements["MTime"].values[
+                0
+            ],
+            end_time=flexible_measurement_loader_total.measurements["MTime"].values[4],
+        )
+        measurements_noise = flexible_measurement_loader_total_noise.load_timeframe(
+            start_time=flexible_measurement_loader_total_noise.measurements[
+                "MTime"
+            ].values[0],
+            end_time=flexible_measurement_loader_total_noise.measurements[
+                "MTime"
+            ].values[4],
+        )
+        assert measurements is not None
+        assert np.isclose(
+            np.std(measurements_noise - measurements), 2e-6, atol=0.2e-6, rtol=0
+        )
 
 
 class Test_FlexibleMeasurementLoaderTotalCo:
@@ -415,3 +626,44 @@ class Test_FlexibleMeasurementLoaderTotalCo:
             "MPlace",
             "MTime",
         }
+
+    def test_load_time_frame_noise(
+        self,
+        flexible_measurement_loader_total_co,
+        flexible_measurement_loader_total_co_noise,
+    ):
+        measurements = flexible_measurement_loader_total_co.load_timeframe(
+            start_time=flexible_measurement_loader_total_co.measurements[
+                "MTime"
+            ].values[0],
+            end_time=flexible_measurement_loader_total_co.measurements["MTime"].values[
+                4
+            ],
+        )
+        measurements_noise = flexible_measurement_loader_total_co_noise.load_timeframe(
+            start_time=flexible_measurement_loader_total_co_noise.measurements[
+                "MTime"
+            ].values[0],
+            end_time=flexible_measurement_loader_total_co_noise.measurements[
+                "MTime"
+            ].values[4],
+        )
+        assert measurements is not None
+        assert np.isclose(
+            np.std(
+                measurements.loc[{"species": "CO"}]
+                - measurements_noise.loc[{"species": "CO"}]
+            ),
+            2e-9,
+            atol=1e-9,
+            rtol=0,
+        )
+        assert np.isclose(
+            np.std(
+                measurements.loc[{"species": "CO2"}]
+                - measurements_noise.loc[{"species": "CO2"}]
+            ),
+            2e-6,
+            atol=1e-6,
+            rtol=0,
+        )

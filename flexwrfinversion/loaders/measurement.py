@@ -246,6 +246,8 @@ class FlexibleMeasurementLoaderTotal(MeasurementLoader):
         measurement_file_germany: str | Path,
         leave_out: list[str] = None,
         keep_only: list[str] = None,
+        times_of_day: list[int] = None,
+        ppm_noise: float = None,
     ):
         """Flexible implementation of measurement loader to load the total CO2
         measurements directly from files.
@@ -263,6 +265,10 @@ class FlexibleMeasurementLoaderTotal(MeasurementLoader):
                  runs. Defaults to None.
             keep_only (list[str], optional): List of names of station to only include
                  these. Defaults to None.
+            times_of_day (list[int], optional): List of times of day to include in the
+                 measurements. Defaults to None.
+            ppm_noise (bool, optional): Standard deviation of noise to add in ppm.
+                 Defaults to None.
         """
         super().__init__(target_loader, footprint_loader)
         self._measurement_file_city = measurement_file_city
@@ -275,6 +281,8 @@ class FlexibleMeasurementLoaderTotal(MeasurementLoader):
             keep_only = np.char.encode(np.array(keep_only, dtype=str))
         self._leave_out = leave_out
         self._keep_only = keep_only
+        self._times_of_day = times_of_day
+        self._ppm_noise = ppm_noise
         self._measurements = None
         self._unstacked_measurements = None
 
@@ -294,6 +302,10 @@ class FlexibleMeasurementLoaderTotal(MeasurementLoader):
                 )
             if self._keep_only is not None:
                 self._measurements = self._measurements.sel(MPlace=self._keep_only)
+            if self._times_of_day is not None:
+                self._measurements = self._measurements.isel(
+                    MTime=self._measurements.MTime.dt.hour.isin(self._times_of_day)
+                )
             self._measurements = (
                 self._measurements.stack(
                     measurement=self.footprint_loader.MEASUREMENT_DIMS
@@ -318,9 +330,14 @@ class FlexibleMeasurementLoaderTotal(MeasurementLoader):
     def load_timeframe(
         self, start_time: np.datetime64, end_time: np.datetime64
     ) -> xr.DataArray:
-        return self.unstacked_measurements.sel(MTime=slice(start_time, end_time)).stack(
-            measurement=self.footprint_loader.MEASUREMENT_DIMS
-        )
+        time_frame_measurements = self.unstacked_measurements.sel(
+            MTime=slice(start_time, end_time)
+        ).stack(measurement=self.footprint_loader.MEASUREMENT_DIMS)
+        if self._ppm_noise is not None:
+            time_frame_measurements = time_frame_measurements + np.random.normal(
+                scale=self._ppm_noise * 1e-6, size=time_frame_measurements.shape
+            )
+        return time_frame_measurements
 
 
 class FlexibleMeasurementLoaderTotalCo(MeasurementLoader):
@@ -336,6 +353,9 @@ class FlexibleMeasurementLoaderTotalCo(MeasurementLoader):
         measurement_file_germany_co: str | Path,
         leave_out: list[str] = None,
         keep_only: list[str] = None,
+        times_of_day: list[int] = None,
+        ppm_noise: float = None,
+        ppb_noise: float = None,
     ):
         """Flexible implementation of measurement loader to load the total CO2
         measurements directly from files.
@@ -353,6 +373,12 @@ class FlexibleMeasurementLoaderTotalCo(MeasurementLoader):
                  runs. Defaults to None.
             keep_only (list[str], optional): List of names of station to only include
                  these. Defaults to None.
+            times_of_day (list[int], optional): List of times of day to include in the
+                 measurements. Defaults to None.
+            ppm_noise (bool, optional): Standard deviation of noise to add in ppm for CO2.
+                 Defaults to None.
+            ppb_noise (bool, optional): Standard deviation of noise to add in ppb for CO.
+                 Defaults to None.
         """
         super().__init__(target_loader, footprint_loader)
         self._measurement_file_city_co2 = measurement_file_city_co2
@@ -367,6 +393,9 @@ class FlexibleMeasurementLoaderTotalCo(MeasurementLoader):
             keep_only = np.char.encode(np.array(keep_only, dtype=str))
         self._leave_out = leave_out
         self._keep_only = keep_only
+        self._times_of_day = times_of_day
+        self._ppm_noise = ppm_noise
+        self._ppb_noise = ppb_noise
         self._measurements = None
         self._unstacked_measurements = None
 
@@ -406,6 +435,11 @@ class FlexibleMeasurementLoaderTotalCo(MeasurementLoader):
             if self._keep_only is not None:
                 measurements = measurements.sel(MPlace=self._keep_only)
 
+            if self._times_of_day is not None:
+                measurements = measurements.isel(
+                    MTime=measurements.MTime.dt.hour.isin(self._times_of_day)
+                )
+
             self._measurements = (
                 measurements.sortby("species")
                 .stack(measurement=self.footprint_loader.MEASUREMENT_DIMS)
@@ -429,6 +463,15 @@ class FlexibleMeasurementLoaderTotalCo(MeasurementLoader):
     def load_timeframe(
         self, start_time: np.datetime64, end_time: np.datetime64
     ) -> xr.DataArray:
-        return self.unstacked_measurements.sel(MTime=slice(start_time, end_time)).stack(
-            measurement=self.footprint_loader.MEASUREMENT_DIMS
-        )
+        time_frame_measurements = self.unstacked_measurements.sel(
+            MTime=slice(start_time, end_time)
+        ).stack(measurement=self.footprint_loader.MEASUREMENT_DIMS)
+        if self._ppm_noise is not None or self._ppb_noise is not None:
+            noise = xr.zeros_like(time_frame_measurements)
+            ppm_noise = self._ppm_noise * 1e-6 if self._ppm_noise is not None else 0
+            ppb_noise = self._ppb_noise * 1e-9 if self._ppb_noise is not None else 0
+            noise = xr.where(noise.species == "CO2", ppm_noise, ppb_noise)
+            time_frame_measurements = time_frame_measurements + np.random.normal(
+                scale=noise, size=time_frame_measurements.shape
+            )
+        return time_frame_measurements

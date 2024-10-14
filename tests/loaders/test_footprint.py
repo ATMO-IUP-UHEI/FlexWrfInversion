@@ -105,6 +105,25 @@ def flexible_footprint_loader_total_leave_out():
 
 
 @pytest.fixture
+def flexible_footprint_loader_total_times_of_day():
+    return FlexibleFootprintLoaderTotal(
+        EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "munich"
+        / "true"
+        / "remapped_footprints_sums_3H.nc",
+        EXAMPLE_DIRECTORY_0
+        / "remapped_data"
+        / "spring"
+        / "germany"
+        / "true"
+        / "remapped_footprints_sums_3H.nc",
+        times_of_day=[0, 4],
+    )
+
+
+@pytest.fixture
 def flexible_footprint_loader_anth_bio():
     return FlexibleFootprintLoaderAnthBio(
         footprint_file_city_bio=EXAMPLE_DIRECTORY_0
@@ -290,6 +309,10 @@ class Test_FlexibleFootprintLoaderTotal:
             assert len(footprint.dims) == 2
             assert set(footprint.dims) == {"state", "measurement"}
             assert set(footprint.MPlace.values) == {b"site00"}
+
+    def test_footprint_times_of_day(self, flexible_footprint_loader_total_times_of_day):
+        footprint = flexible_footprint_loader_total_times_of_day.footprint
+        assert set(footprint.MTime.dt.hour.values) == {0, 4}
 
     def test_load_timeframe(self, flexible_footprint_loader_total):
         footprint = flexible_footprint_loader_total.footprint
