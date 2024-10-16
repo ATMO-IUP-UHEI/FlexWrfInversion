@@ -13,10 +13,26 @@ from flexwrfinversion.loaders.prior import (
 )
 
 
+class TargetAsErrorNoCorrelation:
+    def __init__(self, *args, **kwargs):
+        raise ValueError("`TargetAsErrorNoCorrelation` is now called `TargetAsError`")
+
+
+class RelativeErrorWithSpatialCorrelation:
+    def __init__(self, *args, **kwargs):
+        raise ValueError(
+            "`RelativeErrorWithSpatialCorrelation` is now called `RelativeError`"
+        )
+
+
 class PriorCovarianceLoader(ABC):
     @abstractmethod
     def __init__(self, prior_loader: PriorLoader, *args, **kwargs):
         self.prior_loader = prior_loader
+        self.spatial_correlation_path = None
+        self._sector_correlation = None
+        self._spatial_correlation = None
+        self._temporal_correlation = None
 
     @property
     @abstractmethod
@@ -25,21 +41,6 @@ class PriorCovarianceLoader(ABC):
         Returns:
             xr.DataArray: The prior standard deviation data as 1D array. Unstacked
                 coordinates are supposed to be passed.
-        """
-        pass
-
-    @abstractmethod
-    def load_timeframe(
-        self, start_time: np.datetime64, end_time: np.datetime64
-    ) -> xr.DataArray:
-        """Load a timeframe of the covariance.
-
-        Args:
-            start_time (np.datetime64): Start time of the convariance timeframe
-            end_time (np.datetime64): End time of the convariance timeframe
-        Returns:
-            xr.DataArray: The covariance as 2D array. Coordinates should be stacked
-                beforehand.
         """
         pass
 
@@ -60,37 +61,6 @@ class PriorCovarianceLoader(ABC):
             dict([(dim, f"{dim}1") for dim in one_d_dataarray.coords.keys()])
         )
         return vector0 * vector1
-
-
-class RelativeErrorWithSpatialCorrelation(PriorCovarianceLoader):
-    def __init__(
-        self,
-        prior_loader: FlexiblePriorLoaderTotal_ShiftToBiospheric,
-        spatial_correlation_path: str | Path = None,
-        relative_error: float = 1,
-    ):
-        """Prior covariance loader with standard deviation that is given as relative
-        error to the prior. Spatial correlation can be used if given in proper format.
-
-        Args:
-            prior_loader (FlexiblePriorLoaderTotal_ShiftToBiospheric): Prior loader used
-                 in the Inversion.
-            spatial_correlation_path (str | Path, optional): Path to file with spatial
-                 correlations. Defaults to None.
-            relative_error (float, optional): Relative error to use. `1` corresponds.
-                 to a 100% error. Defaults to 1.
-        """
-        super().__init__(prior_loader)
-        self._spatial_correlation_path = spatial_correlation_path
-        self._relative_error = relative_error
-        self._prior_std = None
-        self._spatial_correlation = None
-
-    @property
-    def prior_std(self) -> xr.DataArray:
-        if self._prior_std is None:
-            self._prior_std = np.abs(self.prior_loader.prior) * self._relative_error
-        return self._prior_std
 
     @property
     def spatial_correlation(self) -> xr.DataArray:
@@ -120,21 +90,54 @@ class RelativeErrorWithSpatialCorrelation(PriorCovarianceLoader):
                 ).compute()
         return self._spatial_correlation
 
-    def load_timeframe(
-        self, start_time: np.datetime64, end_time: np.datetime64
-    ) -> xr.DataArray:
-        unstacked_prior_std = self.prior_std.unstack()
-        time_values = unstacked_prior_std.Time.sel(
-            Time=slice(start_time, end_time)
-        ).values
-        temporal_correlation = xr.DataArray(
+    @property
+    def temporal_correlation(self) -> xr.DataArray:
+        """Temporal correlation matrix (no spatial part included).
+
+        Returns:
+            xr.DataArray: Temporal correlation matrix.
+        """
+        if self._temporal_correlation is None:
+            time_values = self.prior_loader.prior.unstack().Time.values
+        return xr.DataArray(
             np.eye(
                 len(time_values),
                 dtype=self.prior_loader.prior.dtype,
             ),
             coords=[("Time0", time_values), ("Time1", time_values)],
         )
-        correlation = (self.spatial_correlation * temporal_correlation).stack(
+
+    @property
+    def sector_correlation(self) -> xr.DataArray:
+        if "sector" in self.prior_loader.prior.unstack().coords:
+            if self._sector_correlation is None:
+                correlation = self._to_two_dimensions(
+                    xr.zeros_like(
+                        self.prior_loader.prior.unstack().isel(Time=0, subsector=0)
+                    )
+                )
+                correlation = correlation + np.eye(correlation.shape[0])
+                self._sector_correlation = correlation
+            return self._sector_correlation
+        else:
+            return None
+
+    def compute_stacked_correlation(self, *correlations: xr.DataArray):
+        """Compute the correlation of the given correlation matrices.
+
+        Args:
+            *correlations (xr.DataArray): Correlation matrices to multiply.
+
+        Returns:
+            xr.DataArray: The product of the correlation matrices.
+        """
+        correlation = 1
+        for corr in correlations:
+            if corr is None:
+                continue
+            correlation = correlation * corr
+
+        return correlation.stack(
             state0=[
                 state_dim + "0"
                 for state_dim in self.prior_loader.target_loader.STATE_DIMS
@@ -144,6 +147,20 @@ class RelativeErrorWithSpatialCorrelation(PriorCovarianceLoader):
                 for state_dim in self.prior_loader.target_loader.STATE_DIMS
             ],
         )
+
+    def load_timeframe(
+        self, start_time: np.datetime64, end_time: np.datetime64
+    ) -> xr.DataArray:
+        unstacked_prior_std = self.prior_std.unstack()
+        time_values = unstacked_prior_std.Time.sel(
+            Time=slice(start_time, end_time)
+        ).values
+        correlation = self.compute_stacked_correlation(
+            self.spatial_correlation,
+            self.temporal_correlation.sel(Time0=time_values, Time1=time_values),
+            self.sector_correlation,
+        )
+
         return (
             (
                 self._to_two_dimensions(
@@ -158,11 +175,42 @@ class RelativeErrorWithSpatialCorrelation(PriorCovarianceLoader):
         )
 
 
-class TargetAsErrorNoCorrelation(PriorCovarianceLoader):
+class RelativeError(PriorCovarianceLoader):
+    def __init__(
+        self,
+        prior_loader: FlexiblePriorLoaderTotal_ShiftToBiospheric,
+        spatial_correlation_path: str | Path = None,
+        relative_error: float = 1,
+    ):
+        """Prior covariance loader with standard deviation that is given as relative
+        error to the prior. Spatial correlation can be used if given in proper format.
+
+        Args:
+            prior_loader (FlexiblePriorLoaderTotal_ShiftToBiospheric): Prior loader used
+                 in the Inversion.
+            spatial_correlation_path (str | Path, optional): Path to file with spatial
+                 correlations. Defaults to None.
+            relative_error (float, optional): Relative error to use. `1` corresponds.
+                 to a 100% error. Defaults to 1.
+        """
+        super().__init__(prior_loader)
+        self._spatial_correlation_path = spatial_correlation_path
+        self._relative_error = relative_error
+        self._prior_std = None
+
+    @property
+    def prior_std(self) -> xr.DataArray:
+        if self._prior_std is None:
+            self._prior_std = np.abs(self.prior_loader.prior) * self._relative_error
+        return self._prior_std
+
+
+class TargetAsError(PriorCovarianceLoader):
     def __init__(
         self,
         prior_loader: PriorLoader,
         minimum_error: float = None,
+        spatial_correlation_path: str | Path = None,
     ):
         """Use target values as std for the covariance. Cannot use correlation.
 
@@ -173,6 +221,7 @@ class TargetAsErrorNoCorrelation(PriorCovarianceLoader):
         super().__init__(prior_loader)
         self._prior_std = None
         self._minimum_error = minimum_error
+        self._spatial_correlation_path = spatial_correlation_path
 
     @property
     def prior_std(self) -> xr.DataArray:
@@ -184,20 +233,24 @@ class TargetAsErrorNoCorrelation(PriorCovarianceLoader):
                     self._minimum_error,
                     self._prior_std,
                 )
-
         return self._prior_std
 
-    def load_timeframe(
-        self, start_time: np.datetime64, end_time: np.datetime64
-    ) -> xr.DataArray:
-        prior_selection = (
-            self.prior_std.unstack()
-            .sel(Time=slice(start_time, end_time))
-            .stack(state=self.prior_loader.target_loader.STATE_DIMS)
-        )
-        return self._to_two_dimensions(prior_selection) * np.eye(
-            prior_selection.shape[0]
-        )
+
+class DifferenceOfPriorToTarget(TargetAsError):
+    @property
+    def prior_std(self) -> xr.DataArray:
+        if self._prior_std is None:
+            self._prior_std = np.abs(
+                self.prior_loader.prior - self.prior_loader.target_loader.target
+            )
+            if self._minimum_error is not None:
+                self._prior_std = xr.where(
+                    self._prior_std < self._minimum_error,
+                    self._minimum_error,
+                    self._prior_std,
+                )
+
+        return self._prior_std
 
 
 class TargetAsErrorWithCO_Correlation(PriorCovarianceLoader):
@@ -206,6 +259,8 @@ class TargetAsErrorWithCO_Correlation(PriorCovarianceLoader):
         prior_loader: PriorLoader,
         anth_co_correlation: float = 0,
         spatial_correlation_path: str | Path = None,
+        co2_minimum_error: float = None,
+        co_minimum_error: float = None,
     ):
         """Prior covariance loader for anthropogenic and biogenic CO2 together with CO.
         A correlation is built into the covariace between CO2_anth and CO.
@@ -216,43 +271,38 @@ class TargetAsErrorWithCO_Correlation(PriorCovarianceLoader):
                  and CO emissions. Defaults to 0.
             spatial_correlation_path (str | Path, optional): Path to the spatial
                  correlation to be used. Defaults to None.
+            co2_minimum_error (float, optional): Minimum error for CO2. Defaults to None.
+            co_minimum_error (float, optional): Minimum error for CO. Defaults to None.
         """
         super().__init__(prior_loader)
         self._anth_co_correlation = anth_co_correlation
         self._spatial_correlation_path = spatial_correlation_path
+        self._co2_minimum_error = co2_minimum_error
+        self._co_minimum_error = co_minimum_error
         self._prior_std = None
-        self._sector_correlation = None
-        self._spatial_correlation = None
 
     @property
     def prior_std(self) -> xr.DataArray:
         if self._prior_std is None:
             self._prior_std = np.abs(self.prior_loader.target_loader.target)
-        return self._prior_std
-
-    @property
-    def spatial_correlation(self) -> xr.DataArray:
-        """Spatial subpart of the covariance (2D)."""
-        if self._spatial_correlation is None:
-            if self._spatial_correlation_path is None:
-                spatial_coordinate_values = (
-                    self.prior_loader.prior.unstack().subsector.values
+            if self._co2_minimum_error is not None:
+                self._prior_std = xr.where(
+                    self.prior_loader.target_loader.target.sector == "CO2_ANT_TOTAL",
+                    self._co2_minimum_error,
+                    self._prior_std,
                 )
-                self._spatial_correlation = xr.DataArray(
-                    np.eye(
-                        len(spatial_coordinate_values),
-                        dtype=self.prior_loader.prior.dtype,
-                    ),
-                    coords=[
-                        ("subsector0", spatial_coordinate_values),
-                        ("subsector1", spatial_coordinate_values),
-                    ],
-                ).compute()
-            else:
-                self._spatial_correlation = xr.open_dataarray(
-                    self._spatial_correlation_path
-                ).compute()
-        return self._spatial_correlation
+                self._prior_std = xr.where(
+                    self.prior_loader.target_loader.target.sector == "E_CO2_VPRM",
+                    self._co2_minimum_error,
+                    self._prior_std,
+                )
+            if self._co_minimum_error is not None:
+                self._prior_std = xr.where(
+                    self.prior_loader.target_loader.target.sector == "E_CO",
+                    self._co_minimum_error,
+                    self._prior_std,
+                )
+        return self._prior_std
 
     @property
     def sector_correlation(self) -> xr.DataArray:
@@ -277,41 +327,29 @@ class TargetAsErrorWithCO_Correlation(PriorCovarianceLoader):
             self._sector_correlation = correlation
         return self._sector_correlation
 
-    def load_timeframe(
-        self, start_time: np.datetime64, end_time: np.datetime64
-    ) -> xr.DataArray:
-        unstacked_prior_std = self.prior_std.unstack()
-        time_values = unstacked_prior_std.Time.sel(
-            Time=slice(start_time, end_time)
-        ).values
-        temporal_correlation = xr.DataArray(
-            np.eye(
-                len(time_values),
-                dtype=self.prior_loader.prior.dtype,
-            ),
-            coords=[("Time0", time_values), ("Time1", time_values)],
-        )
-        correlation = (
-            self.spatial_correlation * temporal_correlation * self.sector_correlation
-        ).stack(
-            state0=[
-                state_dim + "0"
-                for state_dim in self.prior_loader.target_loader.STATE_DIMS
-            ],
-            state1=[
-                state_dim + "1"
-                for state_dim in self.prior_loader.target_loader.STATE_DIMS
-            ],
-        )
-        return (
-            (
-                self._to_two_dimensions(
-                    unstacked_prior_std.sel(Time=slice(start_time, end_time)).stack(
-                        state=self.prior_loader.target_loader.STATE_DIMS
-                    )
-                )
-                * correlation
+
+class DifferenceOfPriorToTargetWithCO_Correlation(TargetAsErrorWithCO_Correlation):
+    @property
+    def prior_std(self) -> xr.DataArray:
+        if self._prior_std is None:
+            self._prior_std = np.abs(
+                self.prior_loader.prior - self.prior_loader.target_loader.target
             )
-            .astype(np.float32)
-            .compute()
-        )
+            if self._co2_minimum_error is not None:
+                self._prior_std = xr.where(
+                    self.prior_loader.target_loader.target.sector == "CO2_ANT_TOTAL",
+                    self._prior_std,
+                    self._co2_minimum_error,
+                )
+                self._prior_std = xr.where(
+                    self.prior_loader.target_loader.target.sector == "E_CO2_VPRM",
+                    self._prior_std,
+                    self._co_minimum_error,
+                )
+            if self._co_minimum_error is not None:
+                self._prior_std = xr.where(
+                    self.prior_loader.target_loader.target.sector == "E_CO",
+                    self._prior_std,
+                    self._co_minimum_error,
+                )
+        return self._prior_std

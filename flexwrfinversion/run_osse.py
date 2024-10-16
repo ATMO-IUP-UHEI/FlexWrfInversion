@@ -65,8 +65,12 @@ from flexwrfinversion.loaders.prior import (
     PriorLoader,
 )
 from flexwrfinversion.loaders.prior_covariance import (
+    DifferenceOfPriorToTarget,
+    DifferenceOfPriorToTargetWithCO_Correlation,
     PriorCovarianceLoader,
+    RelativeError,
     RelativeErrorWithSpatialCorrelation,
+    TargetAsError,
     TargetAsErrorNoCorrelation,
     TargetAsErrorWithCO_Correlation,
 )

@@ -17,8 +17,10 @@ from flexwrfinversion.loaders.prior import (
     FlexiblePriorLoaderTotal_ShiftToBiospheric,
 )
 from flexwrfinversion.loaders.prior_covariance import (
-    RelativeErrorWithSpatialCorrelation,
-    TargetAsErrorNoCorrelation,
+    DifferenceOfPriorToTarget,
+    DifferenceOfPriorToTargetWithCO_Correlation,
+    RelativeError,
+    TargetAsError,
     TargetAsErrorWithCO_Correlation,
 )
 from flexwrfinversion.loaders.target import (
@@ -30,7 +32,7 @@ from flexwrfinversion.loaders.target import (
 EXAMPLE_DIRECTORY_0 = Path(__file__).parent.parent / "data" / "example_directory_0"
 
 
-# TARGET LOADER FIXTURES
+# %% TARGET LOADER FIXTURES
 @pytest.fixture
 def flexible_target_loader_total():
     return FlexibleTargetLoaderTotal(
@@ -121,7 +123,7 @@ def flexible_target_loader_anth_bio_co():
     )
 
 
-# PRIOR LOADER FIXTURES
+# %% PRIOR LOADER FIXTURES
 @pytest.fixture
 def flat_prior(flexible_target_loader_anth_bio):
     return FlatPrior(target_loader=flexible_target_loader_anth_bio, value=0.1)
@@ -163,29 +165,36 @@ def flexible_prior_loader_total_shift_to_biospheric(flexible_target_loader_total
     )
 
 
-# PRIOR COVARIANCE LOADER FIXTURES
+# %% PRIOR COVARIANCE LOADER FIXTURES
 @pytest.fixture
-def relative_error_with_spatial_correlation(
+def relative_error(
     flexible_prior_loader_total_shift_to_biospheric,
 ):
-    return RelativeErrorWithSpatialCorrelation(
+    return RelativeError(
         prior_loader=flexible_prior_loader_total_shift_to_biospheric,
         relative_error=0.5,
     )
 
 
 @pytest.fixture
-def target_as_error_no_correlation(flat_prior):
-    return TargetAsErrorNoCorrelation(
+def target_as_error(flat_prior):
+    return TargetAsError(
         prior_loader=flat_prior,
     )
 
 
 @pytest.fixture
-def target_as_error_no_correlation_with_minimum(flat_prior):
-    return TargetAsErrorNoCorrelation(
+def target_as_error_with_minimum(flat_prior):
+    return TargetAsError(
         prior_loader=flat_prior,
         minimum_error=1e-7,
+    )
+
+
+@pytest.fixture
+def difference_of_prior_to_target(flat_prior):
+    return DifferenceOfPriorToTarget(
+        prior_loader=flat_prior,
     )
 
 
@@ -197,7 +206,25 @@ def target_as_error_with_co_correlation(flat_prior_with_co):
     )
 
 
-# FOOTPRINT LOADER FIXTURES
+@pytest.fixture
+def target_as_error_with_co_correlation_with_minimum(flat_prior_with_co):
+    return TargetAsErrorWithCO_Correlation(
+        prior_loader=flat_prior_with_co,
+        anth_co_correlation=0.5,
+        co2_minimum_error=1e-6,
+        co_minimum_error=2e-6,
+    )
+
+
+@pytest.fixture
+def difference_of_prior_to_target_with_co_correlation(flat_prior_with_co):
+    return DifferenceOfPriorToTargetWithCO_Correlation(
+        prior_loader=flat_prior_with_co,
+        anth_co_correlation=0.5,
+    )
+
+
+# %% FOOTPRINT LOADER FIXTURES
 @pytest.fixture
 def flexible_footprint_loader_total():
     return FlexibleFootprintLoaderTotal(
@@ -345,7 +372,7 @@ def flexible_footprint_loader_anth_bio_co():
     )
 
 
-# MEASUREMENT LOADER FIXTURES
+# %% MEASUREMENT LOADER FIXTURES
 @pytest.fixture
 def flexible_measurement_loader_total(
     flexible_target_loader_total, flexible_footprint_loader_total
