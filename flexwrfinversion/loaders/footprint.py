@@ -130,8 +130,10 @@ class FlexibleFootprintLoaderTotal(FootprintLoader):
                 )
 
             self._footprint = (
-                self._footprint.sortby("subsector")
-                .stack(state=self.STATE_DIMS, measurement=self.MEASUREMENT_DIMS)
+                self._footprint.stack(
+                    state=self.STATE_DIMS, measurement=self.MEASUREMENT_DIMS
+                )
+                .sortby("subsector")
                 .astype(np.float32)
                 .compute()
             )
@@ -312,6 +314,8 @@ class FlexibleFootprintLoaderAnthBio(FootprintLoader):
                 self._footprint.stack(
                     state=self.STATE_DIMS, measurement=self.MEASUREMENT_DIMS
                 )
+                .sortby("sector")
+                .sortby("subsector")
                 .astype(np.float32)
                 .compute()
                 .fillna(0)
@@ -515,8 +519,9 @@ class FlexibleFootprintLoaderAnthBioCo(FootprintLoader):
 
             self._footprint = (
                 self._footprint.sortby("species")
-                .sortby("sector")
                 .stack(state=self.STATE_DIMS, measurement=self.MEASUREMENT_DIMS)
+                .sortby("sector")
+                .sortby("subsector")
                 .astype(np.float32)
                 .compute()
                 .fillna(0)

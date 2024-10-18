@@ -102,3 +102,40 @@ class Test_PriorLoaderAnthBio_RelativeError_PointExtra:
             atol=0,
             rtol=1e-3,
         )
+
+
+class Test_PriorLoaderAnthBioCo_RelativeError_PointExtra:
+    def test_prior(self, prior_loader_anth_bio_co_relative_error_point_extra):
+        prior = prior_loader_anth_bio_co_relative_error_point_extra.prior
+        target = (
+            prior_loader_anth_bio_co_relative_error_point_extra.target_loader.target
+        )
+        anth_prior = prior.sel(sector="CO2_ANT_TOTAL")
+        bio_prior = prior.sel(sector="E_CO2_VPRM")
+        co_prior = prior.sel(sector="E_CO")
+        anth_target = target.sel(sector="CO2_ANT_TOTAL")
+        bio_target = target.sel(sector="E_CO2_VPRM")
+        co_target = target.sel(sector="E_CO")
+
+        rel_difference_anth = 1 - np.abs(anth_prior / anth_target)
+        rel_difference_bio = np.abs(1 - np.abs(bio_prior / bio_target))
+        rel_difference_co = np.abs(1 - np.abs(co_prior / co_target))
+
+        assert prior is not None
+        assert isinstance(prior, xr.DataArray)
+        assert len(prior.dims) == 1
+        assert set(prior.dims) == {"state"}
+        assert not np.allclose(prior, target, atol=0, rtol=1e-3)
+        assert ((rel_difference_anth >= 0.1) & (rel_difference_anth <= 0.5)).all()
+        assert np.allclose(
+            rel_difference_bio.where(~rel_difference_bio.isnull(), drop=True),
+            0.3,
+            atol=0,
+            rtol=1e-3,
+        )
+        assert np.allclose(
+            rel_difference_co.where(~rel_difference_co.isnull(), drop=True),
+            0.2,
+            atol=0,
+            rtol=1e-3,
+        )

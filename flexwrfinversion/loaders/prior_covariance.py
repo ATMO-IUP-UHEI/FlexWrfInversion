@@ -233,6 +233,14 @@ class TargetAsError(PriorCovarianceLoader):
                     self._minimum_error,
                     self._prior_std,
                 )
+            try:
+                self._prior_std = self._prior_std.sortby("sector")
+            except KeyError:
+                pass
+            try:
+                self._prior_std = self._prior_std.sortby("subsector")
+            except KeyError:
+                pass
         return self._prior_std
 
 
@@ -287,21 +295,26 @@ class TargetAsErrorWithCO_Correlation(PriorCovarianceLoader):
             self._prior_std = np.abs(self.prior_loader.target_loader.target)
             if self._co2_minimum_error is not None:
                 self._prior_std = xr.where(
-                    self.prior_loader.target_loader.target.sector == "CO2_ANT_TOTAL",
+                    (self.prior_loader.target_loader.target.sector == "CO2_ANT_TOTAL")
+                    & (self._prior_std < self._co2_minimum_error),
                     self._co2_minimum_error,
                     self._prior_std,
                 )
                 self._prior_std = xr.where(
-                    self.prior_loader.target_loader.target.sector == "E_CO2_VPRM",
+                    (self.prior_loader.target_loader.target.sector == "E_CO2_VPRM")
+                    & (self._prior_std < self._co2_minimum_error),
                     self._co2_minimum_error,
                     self._prior_std,
                 )
             if self._co_minimum_error is not None:
                 self._prior_std = xr.where(
-                    self.prior_loader.target_loader.target.sector == "E_CO",
+                    (self.prior_loader.target_loader.target.sector == "E_CO")
+                    & (self._prior_std < self._co_minimum_error),
                     self._co_minimum_error,
                     self._prior_std,
                 )
+                self._prior_std = self._prior_std.sortby("sector")
+                self._prior_std = self._prior_std.sortby("subsector")
         return self._prior_std
 
     @property
@@ -337,19 +350,27 @@ class DifferenceOfPriorToTargetWithCO_Correlation(TargetAsErrorWithCO_Correlatio
             )
             if self._co2_minimum_error is not None:
                 self._prior_std = xr.where(
-                    self.prior_loader.target_loader.target.sector == "CO2_ANT_TOTAL",
-                    self._prior_std,
+                    (
+                        (
+                            self.prior_loader.target_loader.target.sector
+                            == "CO2_ANT_TOTAL"
+                        )
+                        & (self._prior_std < self._co2_minimum_error)
+                    ),
                     self._co2_minimum_error,
+                    self._prior_std,
                 )
                 self._prior_std = xr.where(
-                    self.prior_loader.target_loader.target.sector == "E_CO2_VPRM",
+                    (self.prior_loader.target_loader.target.sector == "E_CO2_VPRM")
+                    & (self._prior_std < self._co2_minimum_error),
+                    self._co2_minimum_error,
                     self._prior_std,
-                    self._co_minimum_error,
                 )
             if self._co_minimum_error is not None:
                 self._prior_std = xr.where(
-                    self.prior_loader.target_loader.target.sector == "E_CO",
-                    self._prior_std,
+                    (self.prior_loader.target_loader.target.sector == "E_CO")
+                    & (self._prior_std < self._co_minimum_error),
                     self._co_minimum_error,
+                    self._prior_std,
                 )
         return self._prior_std

@@ -16,6 +16,7 @@ from flexwrfinversion.loaders.prior import (
     FlatPrior,
     FlexiblePriorLoaderTotal_ShiftToBiospheric,
     PriorLoaderAnthBio_RelativeError_PointExtra,
+    PriorLoaderAnthBioCo_RelativeError_PointExtra,
 )
 from flexwrfinversion.loaders.prior_covariance import (
     DifferenceOfPriorToTarget,
@@ -147,6 +148,36 @@ def flexible_target_loader_anth_bio_co():
     )
 
 
+@pytest.fixture
+def flexible_target_loader_anth_bio_co_2():
+    return FlexibleTargetLoaderAnthBioCo(
+        target_file_city_bio=EXAMPLE_DIRECTORY_1
+        / "remapped_data"
+        / "berlin"
+        / "remapped_true_emissions_vprm.nc",
+        target_file_city_ant=EXAMPLE_DIRECTORY_1
+        / "remapped_data"
+        / "berlin"
+        / "remapped_true_emissions_anth.nc",
+        target_file_city_co=EXAMPLE_DIRECTORY_1
+        / "remapped_data"
+        / "berlin"
+        / "remapped_true_emissions_co.nc",
+        target_file_germany_bio=EXAMPLE_DIRECTORY_1
+        / "remapped_data"
+        / "germany"
+        / "remapped_true_emissions_vprm.nc",
+        target_file_germany_ant=EXAMPLE_DIRECTORY_1
+        / "remapped_data"
+        / "germany"
+        / "remapped_true_emissions_anth.nc",
+        target_file_germany_co=EXAMPLE_DIRECTORY_1
+        / "remapped_data"
+        / "germany"
+        / "remapped_true_emissions_co.nc",
+    )
+
+
 # %% PRIOR LOADER FIXTURES
 @pytest.fixture
 def flat_prior(flexible_target_loader_anth_bio):
@@ -220,6 +251,51 @@ def prior_loader_anth_bio_relative_error_point_extra(flexible_target_loader_anth
         anth_emission_error=-0.5,
         bio_emission_error=0.3,
         point_emission_error=-0.1,
+    )
+
+
+@pytest.fixture
+def prior_loader_anth_bio_co_relative_error_point_extra(
+    flexible_target_loader_anth_bio_co_2,
+):
+    return PriorLoaderAnthBioCo_RelativeError_PointExtra(
+        target_loader=flexible_target_loader_anth_bio_co_2,
+        anth_emission_file_city=EXAMPLE_DIRECTORY_1
+        / "remapped_data"
+        / "berlin"
+        / "remapped_true_emissions_anth.nc",
+        anth_emission_file_germany=EXAMPLE_DIRECTORY_1
+        / "remapped_data"
+        / "germany"
+        / "remapped_true_emissions_anth.nc",
+        bio_emission_file_city=EXAMPLE_DIRECTORY_1
+        / "remapped_data"
+        / "berlin"
+        / "remapped_true_emissions_vprm.nc",
+        bio_emission_file_germany=EXAMPLE_DIRECTORY_1
+        / "remapped_data"
+        / "germany"
+        / "remapped_true_emissions_vprm.nc",
+        point_emission_file_city=EXAMPLE_DIRECTORY_1
+        / "remapped_data"
+        / "berlin"
+        / "remapped_true_emissions_point.nc",
+        point_emission_file_germany=EXAMPLE_DIRECTORY_1
+        / "remapped_data"
+        / "germany"
+        / "remapped_true_emissions_point.nc",
+        co_emission_file_city=EXAMPLE_DIRECTORY_1
+        / "remapped_data"
+        / "berlin"
+        / "remapped_true_emissions_co.nc",
+        co_emission_file_germany=EXAMPLE_DIRECTORY_1
+        / "remapped_data"
+        / "germany"
+        / "remapped_true_emissions_co.nc",
+        anth_emission_error=-0.5,
+        bio_emission_error=0.3,
+        point_emission_error=-0.1,
+        co_emission_error=0.2,
     )
 
 
