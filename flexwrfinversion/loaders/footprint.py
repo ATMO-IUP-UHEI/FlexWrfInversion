@@ -292,7 +292,9 @@ class FlexibleFootprintLoaderAnthBio(FootprintLoader):
                 .sortby("subsector")
             )
 
-            self._footprint = xr.concat([bio_footprints, anth_footprints], dim="sector")
+            self._footprint = xr.concat(
+                [bio_footprints, anth_footprints], dim="sector"
+            ).sortby("sector")
 
             if self._leave_out is not None:
                 self._footprint = self._footprint.isel(

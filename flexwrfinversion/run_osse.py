@@ -63,6 +63,7 @@ from flexwrfinversion.loaders.prior import (
     FlatPrior,
     FlexiblePriorLoaderTotal_ShiftToBiospheric,
     PriorLoader,
+    PriorLoaderAnthBio_RelativeError_PointExtra,
 )
 from flexwrfinversion.loaders.prior_covariance import (
     DifferenceOfPriorToTarget,
