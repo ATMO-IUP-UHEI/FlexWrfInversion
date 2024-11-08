@@ -32,14 +32,16 @@ output_name: ''                 # Name of the output file
 ```
 """
 
+import time
 from argparse import ArgumentParser
 from pathlib import Path
 
 import numpy as np
 import xarray as xr
 import yaml
-from pyinverse.loss import Bayesian
-from pyinverse.solver import BayesianAnalytical
+from loguru import logger
+from pyinverse.loss import Bayesian, BayesianYM
+from pyinverse.solver import BayesianAnalytical, BayesianAnalyticalYM
 from tqdm.auto import tqdm
 
 # flake8: noqa
@@ -84,7 +86,7 @@ from flexwrfinversion.loaders.target import (
 )
 
 # flake8: noqa
-TIME_BUFFER_FOR_INVERSION_WINDOW = np.timedelta64(24, "h")
+TIME_BUFFER_FOR_INVERSION_WINDOW = np.timedelta64(30, "h")
 
 
 def _get_args():
@@ -112,6 +114,15 @@ def _run_inversion(
     averaging_kernel_diag = []
     averaging_kernel_sum = []
 
+    inversion_time = 0
+    filter_time = 0
+    data_getting_time = 0
+    data_prior_time = 0
+    data_prior_covariance_time = 0
+    data_measurement_time = 0
+    data_measurement_covariance_time = 0
+    data_footprint_time = 0
+
     # Start inversion that operates dayly (three days run only center one is kept)
     for i, (start_date, end_date) in tqdm(
         enumerate(zip(dates[:-1], dates[1:])), total=len(dates) - 1
@@ -119,43 +130,66 @@ def _run_inversion(
         # Set times to load
         emission_start_time = start_date - TIME_BUFFER_FOR_INVERSION_WINDOW
         emission_end_time = end_date + TIME_BUFFER_FOR_INVERSION_WINDOW
-        measurement_start_time = start_date
+        measurement_start_time = emission_start_time + np.timedelta64(24, "h")
         measurement_end_time = end_date + TIME_BUFFER_FOR_INVERSION_WINDOW
-
+        tic = time.time()
         # Load data for set timeframes
+        tic2 = time.time()
         prior_emissions = prior_loader.load_timeframe(
             emission_start_time, emission_end_time
         )
+        toc2 = time.time()
+        data_prior_time += toc2 - tic2
 
+        tic2 = time.time()
         prior_emission_covariance = prior_covariance_loader.load_timeframe(
             emission_start_time, emission_end_time
         )
+        toc2 = time.time()
+        data_prior_covariance_time += toc2 - tic2
 
+        tic2 = time.time()
         measurements = measurement_loader.load_timeframe(
             measurement_start_time, measurement_end_time
         )
+        toc2 = time.time()
+        data_measurement_time += toc2 - tic2
 
+        tic2 = time.time()
         measurement_covariance = measurement_covariance_loader.load_timeframe(
             measurement_start_time, measurement_end_time
         )
+        toc2 = time.time()
+        data_measurement_covariance_time += toc2 - tic2
 
+        tic2 = time.time()
         footprint = footprint_loader.load_timeframe(
             emission_start_time,
             emission_end_time,
             measurement_start_time,
             measurement_end_time,
         )
+        toc2 = time.time()
+        data_footprint_time += toc2 - tic2
 
+        toc = time.time()
+        data_getting_time += toc - tic
         # Filter data for the sites selected in the given permutation
-        measurements = measurements.where(measurements.MPlace.isin(sites), drop=True)
-        measurement_covariance = measurement_covariance.where(
-            measurement_covariance.MPlace0.isin(sites), drop=True
-        ).where(measurement_covariance.MPlace1.isin(sites), drop=True)
-        footprint = footprint.where(footprint.MPlace.isin(sites), drop=True)
-
+        tic = time.time()
+        measurements = measurements.isel(measurement=measurements.MPlace.isin(sites))
+        measurement_covariance = measurement_covariance.isel(
+            measurement0=measurement_covariance.MPlace0.isin(sites),
+            measurement1=measurement_covariance.MPlace1.isin(sites),
+        )
+        footprint = footprint.isel(
+            measurement=footprint.MPlace.isin(sites),
+        )
+        toc = time.time()
+        filter_time += toc - tic
         state_coordinates = prior_emissions.coords
 
         # Inversion using the `pyinverse` module
+        tic = time.time()
         loss = Bayesian(
             x_prior=prior_emissions.values,
             cov_prior=prior_emission_covariance.values,
@@ -167,7 +201,8 @@ def _run_inversion(
         solver = BayesianAnalytical(loss)
 
         partial_posterior_emissions, partial_posterior_covariance = solver()
-
+        toc = time.time()
+        inversion_time += toc - tic
         # Build xr.DataArrays from the numpy output
         partial_posterior_emissions = xr.DataArray(
             partial_posterior_emissions, coords=state_coordinates
@@ -217,6 +252,15 @@ def _run_inversion(
         averaging_kernel_sum.append(partial_averaging_kernel_sum)
 
     # Concatenate the daily results and merge dataarrays
+    logger.info(f"Filter time: {filter_time}")
+    logger.info(f"Inversion time: {inversion_time}")
+    logger.info(f"Data getting time: {data_getting_time}")
+    logger.info(f"Data prior time: {data_prior_time}")
+    logger.info(f"Data prior covariance time: {data_prior_covariance_time}")
+    logger.info(f"Data measurement time: {data_measurement_time}")
+    logger.info(f"Data measurement covariance time: {data_measurement_covariance_time}")
+    logger.info(f"Data footprint time: {data_footprint_time}")
+
     prior_std = xr.concat(prior_std, dim="Time")
     posterior_emissions = xr.concat(posterior_emissions, dim="Time")
     posterior_std = xr.concat(posterior_std, dim="Time")

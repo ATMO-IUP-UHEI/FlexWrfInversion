@@ -9,7 +9,7 @@ readme = "README.md"
 python = "^3.10"
 xarray = "^2024.5.0"
 dask = "^2024.5.2"
-pyinverse = {git = "git@github.com:ATMO-IUP-UHEI/pyinverse.git"}
+pyinverse = {git = "git@github.com:christopher-lw/pyinverse.git", branch = "implement-yadav-version"}
 tqdm = "^4.66.4"
 sparse = "^0.15.4"
 
