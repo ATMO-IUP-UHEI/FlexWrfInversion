@@ -39,6 +39,7 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 import yaml
+from dask.distributed import Client
 from loguru import logger
 from pyinverse.loss import Bayesian, BayesianYM
 from pyinverse.solver import BayesianAnalytical, BayesianAnalyticalYM
@@ -295,6 +296,8 @@ def main(args):
     output_buffer_path = output_dir / output_name.split(".")[0]
     output_buffer_path.mkdir(exist_ok=True, parents=True)
 
+    client = Client()
+
     # initialize loaders based on the config
     target_loader: TargetLoader = eval(config["target"]["target_loader"])(
         **config["target"]["kwargs"]
@@ -361,19 +364,20 @@ def main(args):
 
         # Save inversion result to buffer file
         inversion_result.to_netcdf(output_buffer_path / f"permutation_{i}.nc")
-
+    client.restart(wait_for_workers=True)
     # Combine all permutations and save the result
     xr.open_mfdataset(
         output_buffer_path.glob("permutation_*.nc"),
         combine="nested",
         concat_dim="permutation",
-    ).to_netcdf(output_dir / output_name)
+    ).compute().to_netcdf(output_dir / output_name)
 
     # Delete the buffer files
     for file in output_buffer_path.glob("permutation_*.nc"):
         file.unlink()
 
     output_buffer_path.rmdir()
+    client.close()
 
 
 if __name__ == "__main__":

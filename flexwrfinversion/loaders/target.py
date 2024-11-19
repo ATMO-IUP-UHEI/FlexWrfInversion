@@ -81,8 +81,8 @@ class FlexibleTargetLoaderTotal(TargetLoader):
                     ],
                     dim="subsector",
                 )
-                .stack(state=self.STATE_DIMS)
                 .sortby("subsector")
+                .stack(state=self.STATE_DIMS)
                 .astype(FLOAT_PRECISION)
                 .compute()
             )
@@ -201,9 +201,9 @@ class FlexibleTargetLoaderAnthBio(TargetLoader):
 
             self._target = (
                 xr.concat([bio_emissions, anth_emissions], dim="sector")
-                .stack(state=self.STATE_DIMS)
                 .sortby("sector")
                 .sortby("subsector")
+                .stack(state=self.STATE_DIMS)
                 .astype(FLOAT_PRECISION)
                 .compute()
             )
@@ -331,9 +331,9 @@ class FlexibleTargetLoaderAnthBioCo(TargetLoader):
 
             self._target = (
                 xr.concat([bio_emissions, anth_emissions, co_emissions], dim="sector")
-                .stack(state=self.STATE_DIMS)
                 .sortby("sector")
                 .sortby("subsector")
+                .stack(state=self.STATE_DIMS)
                 .astype(FLOAT_PRECISION)
                 .compute()
             )

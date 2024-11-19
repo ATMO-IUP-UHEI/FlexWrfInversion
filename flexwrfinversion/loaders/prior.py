@@ -234,9 +234,9 @@ class PriorLoaderAnthBio_RelativeError_PointExtra(PriorLoader):
             self._prior = (
                 xr.concat([anth_emissions, bio_emissions], dim="sector")
                 .rename(self.target_loader.TOTAL_EMISSION_KEY)
-                .stack(state=self.target_loader.STATE_DIMS)
                 .sortby("sector")
                 .sortby("subsector")
+                .stack(state=self.target_loader.STATE_DIMS)
                 .astype(FLOAT_PRECISION)
                 .compute()
             )

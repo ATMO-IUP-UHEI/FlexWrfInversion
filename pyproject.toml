@@ -12,6 +12,7 @@ dask = "^2024.5.2"
 pyinverse = {git = "git@github.com:christopher-lw/pyinverse.git", branch = "implement-yadav-version"}
 tqdm = "^4.66.4"
 sparse = "^0.15.4"
+distributed = "^2024.11.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"
