@@ -8,6 +8,8 @@ import xarray as xr
 
 from flexwrfinversion.loaders.target import FlexibleTargetLoaderTotal, TargetLoader
 
+FLOAT_PRECISION = np.float32
+
 
 class PriorLoader(ABC):
     @abstractmethod
@@ -80,7 +82,7 @@ class FlatPrior(PriorLoader):
     def prior(self) -> xr.DataArray:
         if self._prior is None:
             self._prior = xr.full_like(
-                self.target_loader.target, self._value, dtype=np.float32
+                self.target_loader.target, self._value, dtype=FLOAT_PRECISION
             ).compute()
         return self._prior
 
@@ -149,7 +151,7 @@ class FlexiblePriorLoaderTotal_ShiftToBiospheric(PriorLoader):
                 )
                 .rename(self.target_loader.TOTAL_EMISSION_KEY)
                 .stack(state=self.target_loader.STATE_DIMS)
-                .astype(np.float32)
+                .astype(FLOAT_PRECISION)
                 .compute()
             )
         return self._prior
@@ -235,7 +237,7 @@ class PriorLoaderAnthBio_RelativeError_PointExtra(PriorLoader):
                 .stack(state=self.target_loader.STATE_DIMS)
                 .sortby("sector")
                 .sortby("subsector")
-                .astype(np.float32)
+                .astype(FLOAT_PRECISION)
                 .compute()
             )
         return self._prior
@@ -337,10 +339,10 @@ class PriorLoaderAnthBioCo_RelativeError_PointExtra(PriorLoader):
             self._prior = (
                 xr.concat([anth_emissions, bio_emissions, co_emissions], dim="sector")
                 .rename("prior_emissions")
-                .stack(state=self.target_loader.STATE_DIMS)
                 .sortby("sector")
                 .sortby("subsector")
-                .astype(np.float32)
+                .stack(state=self.target_loader.STATE_DIMS)
+                .astype(FLOAT_PRECISION)
                 .compute()
             )
         return self._prior

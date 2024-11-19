@@ -6,6 +6,8 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
+FLOAT_PRECISION = np.float32
+
 
 class TargetLoader(ABC):
     @property
@@ -81,7 +83,7 @@ class FlexibleTargetLoaderTotal(TargetLoader):
                 )
                 .stack(state=self.STATE_DIMS)
                 .sortby("subsector")
-                .astype(np.float32)
+                .astype(FLOAT_PRECISION)
                 .compute()
             )
         return self._target
@@ -202,7 +204,7 @@ class FlexibleTargetLoaderAnthBio(TargetLoader):
                 .stack(state=self.STATE_DIMS)
                 .sortby("sector")
                 .sortby("subsector")
-                .astype(np.float32)
+                .astype(FLOAT_PRECISION)
                 .compute()
             )
         return self._target
@@ -332,7 +334,7 @@ class FlexibleTargetLoaderAnthBioCo(TargetLoader):
                 .stack(state=self.STATE_DIMS)
                 .sortby("sector")
                 .sortby("subsector")
-                .astype(np.float32)
+                .astype(FLOAT_PRECISION)
                 .compute()
             )
         return self._target

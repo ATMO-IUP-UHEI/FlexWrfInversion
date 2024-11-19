@@ -85,17 +85,19 @@ from flexwrfinversion.loaders.target import (
 )
 from flexwrfinversion.run_osse import _get_args
 
+FLOAT_PRECISION = np.float32
+
 
 def _run_inversion_ym(
     sites: np.ndarray,
-    prior_emissions: np.ndarray,
-    prior_standard_deviation: np.ndarray,
-    prior_temporal_correlation: np.ndarray,
-    prior_spatial_correlation: np.ndarray,
-    footprints: np.ndarray,
-    measurements: np.ndarray,
-    measurement_covariance: np.ndarray,
-    target_emissions: np.ndarray,
+    prior_emissions: xr.DataArray,
+    prior_standard_deviation: xr.DataArray,
+    prior_temporal_correlation: xr.DataArray,
+    prior_spatial_correlation: xr.DataArray,
+    footprints: xr.DataArray,
+    measurements: xr.DataArray,
+    measurement_covariance: xr.DataArray,
+    target_emissions: xr.DataArray,
 ):
     tic = time.time()
     site_selection = measurements.unstack().MPlace.isin(sites)
@@ -222,21 +224,21 @@ def main(args):
             subsector1_sector1=["subsector1", "sector1"],
         )
 
-    prior_emissions = prior_loader.prior.astype(np.float32)
-    prior_standard_deviation = prior_covariance_loader.prior_std.astype(np.float32)
+    prior_emissions = prior_loader.prior.astype(FLOAT_PRECISION)
+    prior_standard_deviation = prior_covariance_loader.prior_std.astype(FLOAT_PRECISION)
     prior_temporal_correlation = prior_covariance_loader.temporal_correlation.astype(
-        np.float32
+        FLOAT_PRECISION
     )
     prior_spatial_correlation = prior_covariance_loader.spatial_correlation.astype(
-        np.float32
+        FLOAT_PRECISION
     )
-    footprints = footprint_loader.footprint.astype(np.float32)
-    target_emissions = target_loader.target.astype(np.float32)
+    footprints = footprint_loader.footprint.astype(FLOAT_PRECISION)
+    target_emissions = target_loader.target.astype(FLOAT_PRECISION)
 
     if "sector" in prior_loader.prior.coords:
         prior_spatial_correlation = (
             prior_spatial_correlation
-            * prior_covariance_loader.sector_correlation.astype(np.float32)
+            * prior_covariance_loader.sector_correlation.astype(FLOAT_PRECISION)
         )
 
     prior_emissions = restack_coords(
@@ -256,13 +258,13 @@ def main(args):
         prior_spatial_correlation_order,
     )
 
-    measurements = measurement_loader.measurements.astype(np.float32).copy()
+    measurements = measurement_loader.measurements.astype(FLOAT_PRECISION).copy()
     measurement_covariance = (
         measurement_covariance_loader.load_timeframe(
             measurement_loader.measurements.MTime[0],
             measurement_loader.measurements.MTime[-1],
         )
-        .astype(np.float32)
+        .astype(FLOAT_PRECISION)
         .copy()
     )
     # Start osses

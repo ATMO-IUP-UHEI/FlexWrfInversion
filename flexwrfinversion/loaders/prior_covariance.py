@@ -12,6 +12,8 @@ from flexwrfinversion.loaders.prior import (
     PriorLoader,
 )
 
+FLOAT_PRECISION = np.float32
+
 
 class TargetAsErrorNoCorrelation:
     def __init__(self, *args, **kwargs):
@@ -88,6 +90,9 @@ class PriorCovarianceLoader(ABC):
                 self._spatial_correlation = xr.open_dataarray(
                     self._spatial_correlation_path
                 ).compute()
+            self._spatial_correlation = self._spatial_correlation.sortby(
+                "subsector0"
+            ).sortby("subsector1")
         return self._spatial_correlation
 
     @property
@@ -117,7 +122,9 @@ class PriorCovarianceLoader(ABC):
                     )
                 )
                 correlation = correlation + np.eye(correlation.shape[0])
-                self._sector_correlation = correlation
+                self._sector_correlation = correlation.sortby("sector0").sortby(
+                    "sector1"
+                )
             return self._sector_correlation
         else:
             return None
@@ -170,7 +177,7 @@ class PriorCovarianceLoader(ABC):
                 )
                 * correlation
             )
-            .astype(np.float32)
+            .astype(FLOAT_PRECISION)
             .compute()
         )
 
@@ -337,7 +344,7 @@ class TargetAsErrorWithCO_Correlation(PriorCovarianceLoader):
             ).item()
             correlation[anth_index, co_index] = self._anth_co_correlation
             correlation[co_index, anth_index] = self._anth_co_correlation
-            self._sector_correlation = correlation
+            self._sector_correlation = correlation.sortby("sector0").sortby("sector1")
         return self._sector_correlation
 
 

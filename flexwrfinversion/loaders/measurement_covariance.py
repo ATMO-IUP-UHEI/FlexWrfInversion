@@ -8,6 +8,8 @@ import xarray as xr
 
 from flexwrfinversion.loaders.measurement import MeasurementLoader
 
+FLOAT_PRECISION = np.float32
+
 
 class MeasurementCovarianceLoader(ABC):
     @abstractmethod
@@ -79,7 +81,7 @@ class ConstantNoCorrelation(MeasurementCovarianceLoader):
         )
         return (
             (xr.zeros_like(self._to_two_dimensions(std)) + np.diag(std.data**2))
-            .astype(np.float32)
+            .astype(FLOAT_PRECISION)
             .compute()
         )
 
@@ -123,6 +125,6 @@ class ConstantNoCorrelationCO(MeasurementCovarianceLoader):
         ) + (std.where(measurement_subset.species == "CO", 0) * 1e-9 * self._ppb_error)
         return (
             (xr.zeros_like(self._to_two_dimensions(std)) + np.diag(std.data**2))
-            .astype(np.float32)
+            .astype(FLOAT_PRECISION)
             .compute()
         )

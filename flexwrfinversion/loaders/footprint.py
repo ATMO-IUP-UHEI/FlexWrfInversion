@@ -8,6 +8,8 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
+FLOAT_PRECISION = np.float32
+
 
 class FootprintLoader(ABC):
     @abstractmethod
@@ -134,7 +136,7 @@ class FlexibleFootprintLoaderTotal(FootprintLoader):
                     state=self.STATE_DIMS, measurement=self.MEASUREMENT_DIMS
                 )
                 .sortby("subsector")
-                .astype(np.float32)
+                .astype(FLOAT_PRECISION)
                 .compute()
             )
         return self._footprint
@@ -316,7 +318,7 @@ class FlexibleFootprintLoaderAnthBio(FootprintLoader):
                 )
                 .sortby("sector")
                 .sortby("subsector")
-                .astype(np.float32)
+                .astype(FLOAT_PRECISION)
                 .compute()
                 .fillna(0)
             )
@@ -519,10 +521,10 @@ class FlexibleFootprintLoaderAnthBioCo(FootprintLoader):
 
             self._footprint = (
                 self._footprint.sortby("species")
-                .stack(state=self.STATE_DIMS, measurement=self.MEASUREMENT_DIMS)
                 .sortby("sector")
                 .sortby("subsector")
-                .astype(np.float32)
+                .stack(state=self.STATE_DIMS, measurement=self.MEASUREMENT_DIMS)
+                .astype(FLOAT_PRECISION)
                 .compute()
                 .fillna(0)
             )

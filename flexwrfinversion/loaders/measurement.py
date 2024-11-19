@@ -14,6 +14,8 @@ from flexwrfinversion.loaders.footprint import (
 )
 from flexwrfinversion.loaders.target import FlexibleTargetLoaderTotal, TargetLoader
 
+FLOAT_PRECISION = np.float32
+
 
 class MeasurementLoader(ABC):
     @abstractmethod
@@ -126,7 +128,7 @@ class FlexibleMeasurementLoaderTotal(MeasurementLoader):
                 self._measurements.stack(
                     measurement=self.footprint_loader.MEASUREMENT_DIMS
                 )
-                .astype(np.float32)
+                .astype(FLOAT_PRECISION)
                 .compute()
             )
 
@@ -259,7 +261,7 @@ class FlexibleMeasurementLoaderTotalCo(MeasurementLoader):
             self._measurements = (
                 measurements.sortby("species")
                 .stack(measurement=self.footprint_loader.MEASUREMENT_DIMS)
-                .astype(np.float32)
+                .astype(FLOAT_PRECISION)
                 .compute()
             )
 
