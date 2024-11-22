@@ -36,20 +36,83 @@ class FootprintLoader(ABC):
     @staticmethod
     def _open_and_prepare(
         path: Path,
-    ) -> xr.Dataset:
+    ):
         """Opens footprint data and drops unnecessary parts.
         Args:
             path (Path): Path of file to open
         Returns:
-            xr.Dataset: Prepared footprint data"""
-        return (
-            xr.open_dataset(
-                path,
-                chunks="auto",
+            xr.Dataset: Prepared footprint data
+        """
+        if path.suffix == ".nc":
+            data = (
+                xr.open_dataset(
+                    path,
+                    chunks="auto",
+                )
+                .drop_dims(["x_stag", "y_stag"])
+                .fillna(0)
             )
-            .drop_dims(["x_stag", "y_stag"])
-            .fillna(0)
+
+        elif path.suffix == ".pkl":
+            with open(path, "rb") as f:
+                data = pickle.load(f)
+        return data
+
+    @staticmethod
+    def _combine_subsectors(
+        footprints1: xr.DataArray,
+        footprints2: xr.DataArray,
+    ):
+        """Combine footprints of two different subsectors
+
+        Args:
+            footprints1 (xr.DataArray): Footprints of the first subsector
+            footprints2 (xr.DataArray): Footprints of the second subsector
+
+        Returns:
+            xr.DataArray: Combined footprints
+        """
+        return xr.concat(
+            [
+                footprints1.assign_coords(subsector=footprints1.group.values),
+                footprints2.assign_coords(subsector=footprints2.group.values),
+            ],
+            dim="subsector",
         )
+
+    @staticmethod
+    def _select_measurements(
+        footprints: xr.DataArray,
+        leave_out: list[str] = None,
+        keep_only: list[str] = None,
+        times_of_day: list[int] = None,
+    ):
+        """Select measurements from the footprints
+
+        Args:
+            footprints (xr.DataArray): Footprints to select measurements from
+            keep_only (list[str], optional): List of names of stations to only include
+                 these. Defaults to None.
+            leave_out (list[str], optional): List of names of stations to exclude for the
+                 runs. Defaults to None.
+            times_of_day (list[int], optional): List of hours of the day to include in the
+                 data. Defaults to None.
+
+        Returns:
+            xr.DataArray: Selected measurements
+        """
+        if leave_out is not None:
+            footprints = footprints.isel(
+                MPlace=~np.isin(footprints.MPlace.values, leave_out)
+            )
+        if keep_only is not None:
+            footprints = footprints.sel(MPlace=keep_only)
+
+        if times_of_day is not None:
+            footprints = footprints.isel(
+                MTime=footprints.MTime.dt.hour.isin(times_of_day)
+            )
+        return footprints
 
 
 class FlexibleFootprintLoaderTotal(FootprintLoader):
@@ -108,28 +171,13 @@ class FlexibleFootprintLoaderTotal(FootprintLoader):
                 self.TOTAL_EMISSION_KEY
             ]
 
-            self._footprint = xr.concat(
-                [
-                    footprints_city.assign_coords(
-                        subsector=footprints_city.group.values
-                    ),
-                    footprints_germany.assign_coords(
-                        subsector=footprints_germany.group.values
-                    ),
-                ],
-                dim="subsector",
+            self._footprint = self._combine_subsectors(
+                footprints_city, footprints_germany
             )
-            if self._leave_out is not None:
-                self._footprint = self._footprint.isel(
-                    MPlace=~np.isin(self._footprint.MPlace.values, self._leave_out)
-                )
-            if self._keep_only is not None:
-                self._footprint = self._footprint.sel(MPlace=self._keep_only)
 
-            if self._times_of_day is not None:
-                self._footprint = self._footprint.isel(
-                    MTime=self._footprint.MTime.dt.hour.isin(self._times_of_day)
-                )
+            self._footprint = self._select_measurements(
+                self._footprint, self._leave_out, self._keep_only, self._times_of_day
+            )
 
             self._footprint = (
                 self._footprint.sortby("subsector")
@@ -149,25 +197,6 @@ class FlexibleFootprintLoaderTotal(FootprintLoader):
         if self._footprint_unstacked is None:
             self._footprint_unstacked = self.footprint.unstack()
         return self._footprint_unstacked
-
-    @staticmethod
-    def _open_and_prepare(
-        path: Path,
-    ):
-        if path.suffix == ".nc":
-            data = (
-                xr.open_dataset(
-                    path,
-                    chunks="auto",
-                )
-                .drop_dims(["x_stag", "y_stag"])
-                .fillna(0)
-            )
-
-        elif path.suffix == ".pkl":
-            with open(path, "rb") as f:
-                data = pickle.load(f)
-        return data
 
     def load_timeframe(
         self,
@@ -247,50 +276,30 @@ class FlexibleFootprintLoaderAnthBio(FootprintLoader):
             xr.DataArray: 2D DataArray containing the loaded footprints
         """
         if self._footprint is None:
-            footprints_city = self._open_and_prepare(self._footprint_file_city_bio)[
+            footprints_bio_city = self._open_and_prepare(self._footprint_file_city_bio)[
                 self.BIO_SECTOR_KEY
             ]
 
-            footprints_germany = self._open_and_prepare(
+            footprints_bio_germany = self._open_and_prepare(
                 self._footprint_file_germany_bio
             )[self.BIO_SECTOR_KEY]
 
-            footprints_sums_city = self._open_and_prepare(
+            footprints_anth_city = self._open_and_prepare(
                 self._footprint_file_city_ant
             )[self.ANTH_SECTOR_KEY]
-            footprints_sums_germany = self._open_and_prepare(
+            footprints_anth_germany = self._open_and_prepare(
                 self._footprint_file_germany_ant
             )[self.ANTH_SECTOR_KEY]
 
             bio_footprints = (
-                xr.concat(
-                    [
-                        footprints_city.assign_coords(
-                            subsector=footprints_city.group.values
-                        ),
-                        footprints_germany.assign_coords(
-                            subsector=footprints_germany.group.values
-                        ),
-                    ],
-                    dim="subsector",
-                )
-                .expand_dims(sector=[footprints_city.name])
+                self._combine_subsectors(footprints_bio_city, footprints_bio_germany)
+                .expand_dims(sector=[footprints_bio_city.name])
                 .sortby("subsector")
             )
 
             anth_footprints = (
-                xr.concat(
-                    [
-                        footprints_sums_city.assign_coords(
-                            subsector=footprints_city.group.values
-                        ),
-                        footprints_sums_germany.assign_coords(
-                            subsector=footprints_germany.group.values
-                        ),
-                    ],
-                    dim="subsector",
-                )
-                .expand_dims(sector=[footprints_sums_city.name])
+                self._combine_subsectors(footprints_anth_city, footprints_anth_germany)
+                .expand_dims(sector=[footprints_anth_city.name])
                 .sortby("subsector")
             )
 
@@ -298,17 +307,9 @@ class FlexibleFootprintLoaderAnthBio(FootprintLoader):
                 [bio_footprints, anth_footprints], dim="sector"
             ).sortby("sector")
 
-            if self._leave_out is not None:
-                self._footprint = self._footprint.isel(
-                    MPlace=~np.isin(self._footprint.MPlace.values, self._leave_out)
-                )
-            if self._keep_only is not None:
-                self._footprint = self._footprint.sel(MPlace=self._keep_only)
-
-            if self._times_of_day is not None:
-                self._footprint = self._footprint.isel(
-                    MTime=self._footprint.MTime.dt.hour.isin(self._times_of_day)
-                )
+            self._footprint = self._select_measurements(
+                self._footprint, self._leave_out, self._keep_only, self._times_of_day
+            )
 
             self._footprint = (
                 self._footprint.sortby("sector")
@@ -330,31 +331,6 @@ class FlexibleFootprintLoaderAnthBio(FootprintLoader):
         if self._footprint_unstacked is None:
             self._footprint_unstacked = self.footprint.unstack()
         return self._footprint_unstacked
-
-    @staticmethod
-    def _open_and_prepare(
-        path: Path,
-    ):
-        """Opens footprint data and drops unnecessary parts.
-        Args:
-            path (Path): Path of file to open
-        Returns:
-            xr.Dataset: Prepared footprint data
-        """
-        if path.suffix == ".nc":
-            data = (
-                xr.open_dataset(
-                    path,
-                    chunks="auto",
-                )
-                .drop_dims(["x_stag", "y_stag"])
-                .fillna(0)
-            )
-
-        elif path.suffix == ".pkl":
-            with open(path, "rb") as f:
-                data = pickle.load(f)
-        return data
 
     def load_timeframe(
         self,
@@ -434,49 +410,17 @@ class FlexibleFootprintLoaderAnthBioCo(FootprintLoader):
             )[self.CO_SECTOR_KEY]
 
             bio_footprints = (
-                xr.concat(
-                    [
-                        footprints_city_bio.assign_coords(
-                            subsector=footprints_city_bio.group.values
-                        ),
-                        footprints_germany_bio.assign_coords(
-                            subsector=footprints_germany_bio.group.values
-                        ),
-                    ],
-                    dim="subsector",
-                )
+                self._combine_subsectors(footprints_city_bio, footprints_germany_bio)
                 .expand_dims(sector=[footprints_city_bio.name], species=["CO2"])
                 .sortby("subsector")
             )
-
             anth_footprints = (
-                xr.concat(
-                    [
-                        footprints_city_ant.assign_coords(
-                            subsector=footprints_city_ant.group.values
-                        ),
-                        footprints_germany_ant.assign_coords(
-                            subsector=footprints_germany_ant.group.values
-                        ),
-                    ],
-                    dim="subsector",
-                )
+                self._combine_subsectors(footprints_city_ant, footprints_germany_ant)
                 .expand_dims(sector=[footprints_city_ant.name], species=["CO2"])
                 .sortby("subsector")
             )
-
             co_footprints = (
-                xr.concat(
-                    [
-                        footprints_city_co.assign_coords(
-                            subsector=footprints_city_co.group.values
-                        ),
-                        footprints_germany_co.assign_coords(
-                            subsector=footprints_germany_co.group.values
-                        ),
-                    ],
-                    dim="subsector",
-                )
+                self._combine_subsectors(footprints_city_co, footprints_germany_co)
                 .expand_dims(sector=[footprints_city_co.name], species=["CO"])
                 .sortby("subsector")
             )
@@ -503,17 +447,9 @@ class FlexibleFootprintLoaderAnthBioCo(FootprintLoader):
                 [bio_footprints, anth_footprints, co_footprints], dim="sector"
             )
 
-            if self._leave_out is not None:
-                self._footprint = self._footprint.isel(
-                    MPlace=~np.isin(self._footprint.MPlace.values, self._leave_out)
-                )
-            if self._keep_only is not None:
-                self._footprint = self._footprint.sel(MPlace=self._keep_only)
-
-            if self._times_of_day is not None:
-                self._footprint = self._footprint.isel(
-                    MTime=self._footprint.MTime.dt.hour.isin(self._times_of_day)
-                )
+            self._footprint = self._select_measurements(
+                self._footprint, self._leave_out, self._keep_only, self._times_of_day
+            )
 
             self._footprint = (
                 self._footprint.sortby("species")
@@ -547,28 +483,3 @@ class FlexibleFootprintLoaderAnthBioCo(FootprintLoader):
         if self._footprint_file_city_bio.suffix == ".pkl":
             timeframe_data.values = timeframe_data.data.todense()
         return timeframe_data
-
-    @staticmethod
-    def _open_and_prepare(
-        path: Path,
-    ):
-        """Opens footprint data and drops unnecessary parts.
-        Args:
-            path (Path): Path of file to open
-        Returns:
-            xr.Dataset: Prepared footprint data
-        """
-        if path.suffix == ".nc":
-            data = (
-                xr.open_dataset(
-                    path,
-                    chunks="auto",
-                )
-                .drop_dims(["x_stag", "y_stag"])
-                .fillna(0)
-            )
-
-        elif path.suffix == ".pkl":
-            with open(path, "rb") as f:
-                data = pickle.load(f)
-        return data

@@ -54,6 +54,40 @@ class MeasurementLoader(ABC):
         """
         pass
 
+    @staticmethod
+    def _select_measurements(
+        measurements: xr.DataArray,
+        leave_out: list[str] = None,
+        keep_only: list[str] = None,
+        times_of_day: list[int] = None,
+    ):
+        """Select measurements from the measurements
+
+        Args:
+            measurements (xr.DataArray): measurements to select measurements from
+            keep_only (list[str], optional): List of names of stations to only include
+                 these. Defaults to None.
+            leave_out (list[str], optional): List of names of stations to exclude for the
+                 runs. Defaults to None.
+            times_of_day (list[int], optional): List of hours of the day to include in the
+                 data. Defaults to None.
+
+        Returns:
+            xr.DataArray: Selected measurements
+        """
+        if leave_out is not None:
+            measurements = measurements.isel(
+                MPlace=~np.isin(measurements.MPlace.values, leave_out)
+            )
+        if keep_only is not None:
+            measurements = measurements.sel(MPlace=keep_only)
+
+        if times_of_day is not None:
+            measurements = measurements.isel(
+                MTime=measurements.MTime.dt.hour.isin(times_of_day)
+            )
+        return measurements
+
 
 class FlexibleMeasurementLoaderTotal(MeasurementLoader):
     def __init__(
@@ -114,16 +148,12 @@ class FlexibleMeasurementLoaderTotal(MeasurementLoader):
                 self.target_loader.TOTAL_EMISSION_KEY
             ]
             self._measurements = measurements_city + measurements_germany
-            if self._leave_out is not None:
-                self._measurements = self._measurements.isel(
-                    MPlace=~np.isin(self._measurements.MPlace.values, self._leave_out)
-                )
-            if self._keep_only is not None:
-                self._measurements = self._measurements.sel(MPlace=self._keep_only)
-            if self._times_of_day is not None:
-                self._measurements = self._measurements.isel(
-                    MTime=self._measurements.MTime.dt.hour.isin(self._times_of_day)
-                )
+            self._measurements = self._select_measurements(
+                self._measurements,
+                self._leave_out,
+                self._keep_only,
+                self._times_of_day,
+            )
             self._measurements = (
                 self._measurements.stack(
                     measurement=self.footprint_loader.MEASUREMENT_DIMS
@@ -246,17 +276,12 @@ class FlexibleMeasurementLoaderTotalCo(MeasurementLoader):
                 dim="species",
             )
 
-            if self._leave_out is not None:
-                measurements = measurements.isel(
-                    MPlace=~np.isin(measurements.MPlace.values, self._leave_out)
-                )
-            if self._keep_only is not None:
-                measurements = measurements.sel(MPlace=self._keep_only)
-
-            if self._times_of_day is not None:
-                measurements = measurements.isel(
-                    MTime=measurements.MTime.dt.hour.isin(self._times_of_day)
-                )
+            self._measurements = self._select_measurements(
+                measurements,
+                self._leave_out,
+                self._keep_only,
+                self._times_of_day,
+            )
 
             self._measurements = (
                 measurements.sortby("species")
