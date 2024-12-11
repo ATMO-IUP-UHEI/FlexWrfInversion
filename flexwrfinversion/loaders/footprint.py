@@ -116,7 +116,6 @@ class FootprintLoader(ABC):
 
 
 class FlexibleFootprintLoaderTotal(FootprintLoader):
-    TOTAL_EMISSION_KEY = "CO2_TOTAL"
     STATE_DIMS = ["subsector", "Time"]
     MEASUREMENT_DIMS = ["MTime", "MPlace"]
 
@@ -127,6 +126,7 @@ class FlexibleFootprintLoaderTotal(FootprintLoader):
         leave_out: list[str] = None,
         keep_only: list[str] = None,
         times_of_day: list[int] = None,
+        total_sector_key: str = "CO2_TOTAL",
     ):
         """Flexible implementation of footprint loader for total CO2
 
@@ -141,6 +141,8 @@ class FlexibleFootprintLoaderTotal(FootprintLoader):
                  these. Defaults to None.
             times_of_day (list[int], optional): List of hours of the day to include in the
                  data. Defaults to None.
+            total_sector_key (str, optional): Key for total emission. Defaults to
+                 "CO2_TOTAL".
         """
         self._footprint_file_city = Path(footprint_file_city)
         self._footprint_file_germany = Path(footprint_file_germany)
@@ -155,6 +157,7 @@ class FlexibleFootprintLoaderTotal(FootprintLoader):
         self._times_of_day = times_of_day
         self._footprint = None
         self._footprint_unstacked = None
+        self.total_sector_key = total_sector_key
 
     @property
     def footprint(self) -> xr.DataArray:
@@ -165,10 +168,10 @@ class FlexibleFootprintLoaderTotal(FootprintLoader):
         """
         if self._footprint is None:
             footprints_city = self._open_and_prepare(self._footprint_file_city)[
-                self.TOTAL_EMISSION_KEY
+                self.total_sector_key
             ]
             footprints_germany = self._open_and_prepare(self._footprint_file_germany)[
-                self.TOTAL_EMISSION_KEY
+                self.total_sector_key
             ]
 
             self._footprint = self._combine_subsectors(
@@ -216,8 +219,6 @@ class FlexibleFootprintLoaderTotal(FootprintLoader):
 
 
 class FlexibleFootprintLoaderAnthBio(FootprintLoader):
-    ANTH_SECTOR_KEY = "CO2_ANT_TOTAL"
-    BIO_SECTOR_KEY = "E_CO2_VPRM"
     STATE_DIMS = ["subsector", "Time", "sector"]
     MEASUREMENT_DIMS = ["MTime", "MPlace"]
 
@@ -230,6 +231,9 @@ class FlexibleFootprintLoaderAnthBio(FootprintLoader):
         leave_out: list[str] = None,
         keep_only: list[str] = None,
         times_of_day: list[int] = None,
+        ant_sector_key: str = "CO2_ANT_TOTAL",
+        bio_sector_key: str = "E_CO2_VPRM",
+        total_sector_key: str = "CO2_TOTAL",
     ):
         """Flexible implementation of footprint loader to load anthropogenic and biogenic
         parts of the footprints
@@ -249,7 +253,12 @@ class FlexibleFootprintLoaderAnthBio(FootprintLoader):
                  these. Defaults to None.
             times_of_day (list[int], optional): List of hours of the day to include in the
                  data. Defaults to None.
-
+            ant_sector_key (str, optional): Key for anthropogenic sector. Defaults to
+                 "CO2_ANT_TOTAL".
+            bio_sector_key (str, optional): Key for biogenic sector. Defaults to
+                 "E_CO2_VPRM".
+            total_sector_key (str, optional): Key for total emission. Defaults to
+                 "CO2_TOTAL".
         """
 
         self._footprint_file_city_bio = Path(footprint_file_city_bio)
@@ -267,6 +276,9 @@ class FlexibleFootprintLoaderAnthBio(FootprintLoader):
         self._times_of_day = times_of_day
         self._footprint = None
         self._footprint_unstacked = None
+        self.ant_sector_key = ant_sector_key
+        self.bio_sector_key = bio_sector_key
+        self.total_sector_key = total_sector_key
 
     @property
     def footprint(self) -> xr.DataArray:
@@ -277,19 +289,19 @@ class FlexibleFootprintLoaderAnthBio(FootprintLoader):
         """
         if self._footprint is None:
             footprints_bio_city = self._open_and_prepare(self._footprint_file_city_bio)[
-                self.BIO_SECTOR_KEY
+                self.bio_sector_key
             ]
 
             footprints_bio_germany = self._open_and_prepare(
                 self._footprint_file_germany_bio
-            )[self.BIO_SECTOR_KEY]
+            )[self.bio_sector_key]
 
             footprints_anth_city = self._open_and_prepare(
                 self._footprint_file_city_ant
-            )[self.ANTH_SECTOR_KEY]
+            )[self.ant_sector_key]
             footprints_anth_germany = self._open_and_prepare(
                 self._footprint_file_germany_ant
-            )[self.ANTH_SECTOR_KEY]
+            )[self.ant_sector_key]
 
             bio_footprints = (
                 self._combine_subsectors(footprints_bio_city, footprints_bio_germany)
@@ -350,9 +362,6 @@ class FlexibleFootprintLoaderAnthBio(FootprintLoader):
 
 
 class FlexibleFootprintLoaderAnthBioCo(FootprintLoader):
-    ANTH_SECTOR_KEY = "CO2_ANT_TOTAL"
-    BIO_SECTOR_KEY = "E_CO2_VPRM"
-    CO_SECTOR_KEY = "E_CO"
     STATE_DIMS = ["subsector", "Time", "sector"]
     MEASUREMENT_DIMS = ["MTime", "MPlace", "species"]
 
@@ -367,6 +376,9 @@ class FlexibleFootprintLoaderAnthBioCo(FootprintLoader):
         leave_out: list[str] = None,
         keep_only: list[str] = None,
         times_of_day: list[int] = None,
+        ant_sector_key: str = "CO2_ANT_TOTAL",
+        bio_sector_key: str = "E_CO2_VPRM",
+        co_sector_key: str = "E_CO",
     ):
         self._footprint_file_city_bio = Path(footprint_file_city_bio)
         self._footprint_file_city_ant = Path(footprint_file_city_ant)
@@ -385,29 +397,32 @@ class FlexibleFootprintLoaderAnthBioCo(FootprintLoader):
         self._times_of_day = times_of_day
         self._footprint = None
         self._footprint_unstacked = None
+        self.ant_sector_key = ant_sector_key
+        self.bio_sector_key = bio_sector_key
+        self.co_sector_key = co_sector_key
 
     @property
     def footprint(self):
         if self._footprint is None:
             footprints_city_bio = self._open_and_prepare(self._footprint_file_city_bio)[
-                self.BIO_SECTOR_KEY
+                self.bio_sector_key
             ]
             footprints_city_ant = self._open_and_prepare(self._footprint_file_city_ant)[
-                self.ANTH_SECTOR_KEY
+                self.ant_sector_key
             ]
             footprints_city_co = self._open_and_prepare(self._footprint_file_city_co)[
-                self.CO_SECTOR_KEY
+                self.co_sector_key
             ]
 
             footprints_germany_bio = self._open_and_prepare(
                 self._footprint_file_germany_bio
-            )[self.BIO_SECTOR_KEY]
+            )[self.bio_sector_key]
             footprints_germany_ant = self._open_and_prepare(
                 self._footprint_file_germany_ant
-            )[self.ANTH_SECTOR_KEY]
+            )[self.ant_sector_key]
             footprints_germany_co = self._open_and_prepare(
                 self._footprint_file_germany_co
-            )[self.CO_SECTOR_KEY]
+            )[self.co_sector_key]
 
             bio_footprints = (
                 self._combine_subsectors(footprints_city_bio, footprints_germany_bio)

@@ -100,6 +100,7 @@ class FlexibleMeasurementLoaderTotal(MeasurementLoader):
         keep_only: list[str] = None,
         times_of_day: list[int] = None,
         ppm_noise: float = None,
+        total_sector_key: str = "CO2_TOTAL",
     ):
         """Flexible implementation of measurement loader to load the total CO2
         measurements directly from files.
@@ -121,6 +122,8 @@ class FlexibleMeasurementLoaderTotal(MeasurementLoader):
                  measurements. Defaults to None.
             ppm_noise (bool, optional): Standard deviation of noise to add in ppm.
                  Defaults to None.
+            total_sector_key (str, optional): Key for the total emission in the
+                    measurement files. Defaults to "CO2_TOTAL".
         """
         super().__init__(target_loader, footprint_loader)
         self._measurement_file_city = measurement_file_city
@@ -135,6 +138,7 @@ class FlexibleMeasurementLoaderTotal(MeasurementLoader):
         self._keep_only = keep_only
         self._times_of_day = times_of_day
         self._ppm_noise = ppm_noise
+        self.total_sector_key = total_sector_key
         self._measurements = None
         self._unstacked_measurements = None
 
@@ -142,10 +146,10 @@ class FlexibleMeasurementLoaderTotal(MeasurementLoader):
     def measurements(self):
         if self._measurements is None:
             measurements_city = xr.open_dataset(self._measurement_file_city)[
-                self.target_loader.TOTAL_EMISSION_KEY
+                self.total_sector_key
             ]
             measurements_germany = xr.open_dataset(self._measurement_file_germany)[
-                self.target_loader.TOTAL_EMISSION_KEY
+                self.total_sector_key
             ]
             self._measurements = measurements_city + measurements_germany
             self._measurements = self._select_measurements(
@@ -189,7 +193,7 @@ class FlexibleMeasurementLoaderTotal(MeasurementLoader):
 
 
 class FlexibleMeasurementLoaderTotalCo(MeasurementLoader):
-    TOTAL_EMISSION_KEY = "CO2_TOTAL"
+    total_sector_key = "CO2_TOTAL"
 
     def __init__(
         self,
@@ -204,6 +208,8 @@ class FlexibleMeasurementLoaderTotalCo(MeasurementLoader):
         times_of_day: list[int] = None,
         ppm_noise: float = None,
         ppb_noise: float = None,
+        total_sector_key: str = "CO2_TOTAL",
+        co_sector_key: str = "E_CO",
     ):
         """Flexible implementation of measurement loader to load the total CO2
         measurements directly from files.
@@ -227,6 +233,10 @@ class FlexibleMeasurementLoaderTotalCo(MeasurementLoader):
                  Defaults to None.
             ppb_noise (bool, optional): Standard deviation of noise to add in ppb for CO.
                  Defaults to None.
+            total_sector_key (str, optional): Key for the total emission in the
+                 measurement files. Defaults to "CO2_TOTAL".
+            co_sector_key (str, optional): Key for the CO emission in the
+                 measurement files. Defaults to "E_CO".
         """
         super().__init__(target_loader, footprint_loader)
         self._measurement_file_city_co2 = measurement_file_city_co2
@@ -244,6 +254,8 @@ class FlexibleMeasurementLoaderTotalCo(MeasurementLoader):
         self._times_of_day = times_of_day
         self._ppm_noise = ppm_noise
         self._ppb_noise = ppb_noise
+        self.total_sector_key = total_sector_key
+        self.co_sector_key = co_sector_key
         self._measurements = None
         self._unstacked_measurements = None
 
@@ -251,21 +263,15 @@ class FlexibleMeasurementLoaderTotalCo(MeasurementLoader):
     def measurements(self):
         if self._measurements is None:
             co2_measurements = (
-                xr.open_dataset(self._measurement_file_city_co2)[
-                    self.TOTAL_EMISSION_KEY
-                ]
+                xr.open_dataset(self._measurement_file_city_co2)[self.total_sector_key]
                 + xr.open_dataset(self._measurement_file_germany_co2)[
-                    self.TOTAL_EMISSION_KEY
+                    self.total_sector_key
                 ]
             ).expand_dims(species=["CO2"])
 
             co_measurements = (
-                xr.open_dataset(self._measurement_file_city_co)[
-                    self.footprint_loader.CO_SECTOR_KEY
-                ]
-                + xr.open_dataset(self._measurement_file_germany_co)[
-                    self.footprint_loader.CO_SECTOR_KEY
-                ]
+                xr.open_dataset(self._measurement_file_city_co)[self.co_sector_key]
+                + xr.open_dataset(self._measurement_file_germany_co)[self.co_sector_key]
             ).expand_dims(species=["CO"])
 
             measurements = xr.concat(
@@ -284,7 +290,7 @@ class FlexibleMeasurementLoaderTotalCo(MeasurementLoader):
             )
 
             self._measurements = (
-                measurements.sortby("species")
+                self._measurements.sortby("species")
                 .stack(measurement=self.footprint_loader.MEASUREMENT_DIMS)
                 .astype(FLOAT_PRECISION)
                 .compute()

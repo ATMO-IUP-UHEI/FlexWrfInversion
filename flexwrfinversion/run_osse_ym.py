@@ -84,7 +84,7 @@ from flexwrfinversion.loaders.target import (
     FlexibleTargetLoaderTotal,
     TargetLoader,
 )
-from flexwrfinversion.run_osse import _get_args
+from flexwrfinversion.run_osse import _get_args, get_kwargs
 
 FLOAT_PRECISION = np.float32
 
@@ -172,30 +172,32 @@ def main(args):
     output_buffer_path = output_dir / output_name.split(".")[0]
     output_buffer_path.mkdir(exist_ok=True, parents=True)
 
-    client = Client()
+    # client = Client()
 
     # initialize loaders based on the config
+    logger.info("Initializing loaders", flush=True)
     target_loader: TargetLoader = eval(config["target"]["target_loader"])(
-        **config["target"]["kwargs"]
+        **get_kwargs(config, "target")
     )
     prior_loader: PriorLoader = eval(config["prior"]["prior_loader"])(
-        target_loader, **config["prior"]["kwargs"]
+        **get_kwargs(config, "prior")
     )
     prior_covariance_loader: PriorCovarianceLoader = eval(
         config["prior_covariance"]["prior_covariance_loader"]
-    )(prior_loader, **config["prior_covariance"]["kwargs"])
+    )(**get_kwargs(config, "prior_covariance"))
 
     footprint_loader: FootprintLoader = eval(config["footprint"]["footprint_loader"])(
-        **config["footprint"]["kwargs"]
+        **get_kwargs(config, "footprint")
     )
     measurement_loader: MeasurementLoader = eval(
         config["measurement"]["measurement_loader"]
-    )(target_loader, footprint_loader, **config["measurement"]["kwargs"])
+    )(target_loader, footprint_loader, **get_kwargs(config, "measurement"))
     measurement_covariance_loader: MeasurementCovarianceLoader = eval(
         config["measurement_covariance"]["measurement_covariance_loader"]
-    )(measurement_loader, **config["measurement_covariance"]["kwargs"])
+    )(measurement_loader, **get_kwargs(config, "measurement_covariance"))
 
     # select station permutations
+    logger.info("Setting up permutations", flush=True)
     if "permutation_seed" in config:
         global_state = np.random.get_state()
         np.random.seed(config["permutation_seed"])
@@ -211,7 +213,7 @@ def main(args):
 
     if "permutation_seed" in config:
         np.random.set_state(global_state)
-
+    logger.info("Setting up restacking", flush=True)
     dims_to_stack = dict()
     state_order = ["Time", "subsector"]
     footprint_order = ["measurement", "Time", "subsector"]
@@ -227,6 +229,7 @@ def main(args):
             subsector1_sector1=["subsector1", "sector1"],
         )
 
+    logger.info("Loading Prior values and covariance", flush=True)
     prior_emissions = prior_loader.prior.astype(FLOAT_PRECISION)
     prior_standard_deviation = prior_covariance_loader.prior_std.astype(FLOAT_PRECISION)
     prior_temporal_correlation = prior_covariance_loader.temporal_correlation.astype(
@@ -235,15 +238,18 @@ def main(args):
     prior_spatial_correlation = prior_covariance_loader.spatial_correlation.astype(
         FLOAT_PRECISION
     )
+    logger.info("Loading Footprints values", flush=True)
     footprints = footprint_loader.footprint.astype(FLOAT_PRECISION)
+    logger.info("Loading Target values", flush=True)
     target_emissions = target_loader.target.astype(FLOAT_PRECISION)
-
     if "sector" in prior_loader.prior.coords:
+        logger.info("Combining spatial and sector correlation", flush=True)
         prior_spatial_correlation = (
             prior_spatial_correlation
             * prior_covariance_loader.sector_correlation.astype(FLOAT_PRECISION)
         )
 
+    logger.info("Restacking data", flush=True)
     prior_emissions = restack_coords(
         prior_emissions, ["state"], dims_to_stack, state_order
     )
@@ -261,7 +267,9 @@ def main(args):
         prior_spatial_correlation_order,
     )
 
+    logger.info("Loading Measurement values", flush=True)
     measurements = measurement_loader.measurements.astype(FLOAT_PRECISION).copy()
+    logger.info("Loading Measurement covariance", flush=True)
     measurement_covariance = (
         measurement_covariance_loader.load_timeframe(
             measurement_loader.measurements.MTime[0],
@@ -291,7 +299,8 @@ def main(args):
         )
         inversion_result.to_netcdf(output_buffer_path / f"permutation_{i}.nc")
 
-    client.restart(wait_for_workers=True)
+    # client.restart(wait_for_workers=True)
+
     # Combine all permutations and save the result
     xr.open_mfdataset(
         output_buffer_path.glob("permutation_*.nc"),
@@ -304,7 +313,7 @@ def main(args):
         file.unlink()
 
     output_buffer_path.rmdir()
-    client.close()
+    # client.close()
 
 
 if __name__ == "__main__":

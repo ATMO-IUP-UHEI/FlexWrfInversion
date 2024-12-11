@@ -96,6 +96,19 @@ def _get_args():
     return parser.parse_args()
 
 
+def get_kwargs(config, loader_type):
+    kwargs = config[loader_type]["kwargs"]
+    for key, kwargs in config.items():
+        if (
+            (loader_type in key)
+            and (key != loader_type)
+            and ((f"{loader_type}_covariance" in key) * key.count(loader_type))
+            in [0, 2]
+        ):
+            kwargs.update(kwargs)
+    return kwargs
+
+
 def _run_inversion(
     dates: np.ndarray,
     sites: np.ndarray,
@@ -300,24 +313,24 @@ def main(args):
 
     # initialize loaders based on the config
     target_loader: TargetLoader = eval(config["target"]["target_loader"])(
-        **config["target"]["kwargs"]
+        **get_kwargs(config, "target")
     )
     prior_loader: PriorLoader = eval(config["prior"]["prior_loader"])(
-        target_loader, **config["prior"]["kwargs"]
+        **get_kwargs(config, "prior")
     )
     prior_covariance_loader: PriorCovarianceLoader = eval(
         config["prior_covariance"]["prior_covariance_loader"]
-    )(prior_loader, **config["prior_covariance"]["kwargs"])
+    )(**get_kwargs(config, "prior_covariance"))
 
     footprint_loader: FootprintLoader = eval(config["footprint"]["footprint_loader"])(
-        **config["footprint"]["kwargs"]
+        **get_kwargs(config, "footprint")
     )
     measurement_loader: MeasurementLoader = eval(
         config["measurement"]["measurement_loader"]
-    )(target_loader, footprint_loader, **config["measurement"]["kwargs"])
+    )(target_loader, footprint_loader, **get_kwargs(config, "measurement"))
     measurement_covariance_loader: MeasurementCovarianceLoader = eval(
         config["measurement_covariance"]["measurement_covariance_loader"]
-    )(measurement_loader, **config["measurement_covariance"]["kwargs"])
+    )(measurement_loader, **get_kwargs(config, "measurement_covariance"))
 
     # select station permutations
     if "permutation_seed" in config:

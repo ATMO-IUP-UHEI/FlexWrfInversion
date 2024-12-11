@@ -13,6 +13,7 @@ pyinverse = {git = "git@github.com:christopher-lw/pyinverse.git", branch = "impl
 tqdm = "^4.66.4"
 sparse = "^0.15.4"
 distributed = "^2024.11.2"
+loguru = "^0.7.3"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"
