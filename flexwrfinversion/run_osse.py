@@ -98,14 +98,18 @@ def _get_args():
 
 def get_kwargs(config, loader_type):
     kwargs = config[loader_type]["kwargs"]
-    for key, kwargs in config.items():
+    print(kwargs)
+    for key, new_kwargs in config.items():
         if (
             (loader_type in key)
             and (key != loader_type)
             and ((f"{loader_type}_covariance" in key) * key.count(loader_type))
             in [0, 2]
         ):
-            kwargs.update(kwargs)
+            print(key)
+            kwargs.update(new_kwargs)
+
+    print(kwargs)
     return kwargs
 
 
@@ -316,11 +320,11 @@ def main(args):
         **get_kwargs(config, "target")
     )
     prior_loader: PriorLoader = eval(config["prior"]["prior_loader"])(
-        **get_kwargs(config, "prior")
+        target_loader, **get_kwargs(config, "prior")
     )
     prior_covariance_loader: PriorCovarianceLoader = eval(
         config["prior_covariance"]["prior_covariance_loader"]
-    )(**get_kwargs(config, "prior_covariance"))
+    )(prior_loader, **get_kwargs(config, "prior_covariance"))
 
     footprint_loader: FootprintLoader = eval(config["footprint"]["footprint_loader"])(
         **get_kwargs(config, "footprint")

@@ -175,16 +175,15 @@ def main(args):
     # client = Client()
 
     # initialize loaders based on the config
-    logger.info("Initializing loaders", flush=True)
     target_loader: TargetLoader = eval(config["target"]["target_loader"])(
         **get_kwargs(config, "target")
     )
     prior_loader: PriorLoader = eval(config["prior"]["prior_loader"])(
-        **get_kwargs(config, "prior")
+        target_loader, **get_kwargs(config, "prior")
     )
     prior_covariance_loader: PriorCovarianceLoader = eval(
         config["prior_covariance"]["prior_covariance_loader"]
-    )(**get_kwargs(config, "prior_covariance"))
+    )(prior_loader, **get_kwargs(config, "prior_covariance"))
 
     footprint_loader: FootprintLoader = eval(config["footprint"]["footprint_loader"])(
         **get_kwargs(config, "footprint")
