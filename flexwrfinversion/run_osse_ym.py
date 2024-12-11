@@ -84,7 +84,13 @@ from flexwrfinversion.loaders.target import (
     FlexibleTargetLoaderTotal,
     TargetLoader,
 )
-from flexwrfinversion.run_osse import _get_args, get_kwargs
+from flexwrfinversion.run_osse import (
+    _compute_inversion,
+    _get_args,
+    _initialize_loaders,
+    _prepare_permutations,
+    _select_sites,
+)
 
 FLOAT_PRECISION = np.float32
 
@@ -99,24 +105,32 @@ def _run_inversion_ym(
     measurements: xr.DataArray,
     measurement_covariance: xr.DataArray,
     target_emissions: xr.DataArray,
-):
-    tic = time.time()
-    site_selection = measurements.unstack().MPlace.isin(sites)
+) -> xr.Dataset:
+    """
+    Runs the inversion using the given data.
 
-    measurements = measurements.isel(measurement=measurements.MPlace.isin(sites))
-    measurement_covariance = measurement_covariance.isel(
-        measurement0=measurement_covariance.MPlace0.isin(sites),
-        measurement1=measurement_covariance.MPlace1.isin(sites),
-    )
-    footprints = footprints.isel(
-        measurement=footprints.MPlace.isin(sites),
+    Args:
+        sites (np.ndarray): Sites to run the inversion for.
+        prior_emissions (xr.DataArray): Prior emissions.
+        prior_standard_deviation (xr.DataArray): Prior standard deviation.
+        prior_temporal_correlation (xr.DataArray): Prior temporal correlation.
+        prior_spatial_correlation (xr.DataArray): Prior spatial correlation.
+        footprints (xr.DataArray): Footprints.
+        measurements (xr.DataArray): Measurements.
+        measurement_covariance (xr.DataArray): Measurement covariance.
+        target_emissions (xr.DataArray): Target emissions.
+
+    Returns:
+        xr.Dataset: Inversion result.
+    """
+    site_selection = measurements.unstack().MPlace.isin(sites)
+    measurements, measurement_covariance, footprints = _select_sites(
+        measurements, measurement_covariance, footprints, sites
     )
     state_coordinates = prior_emissions.coords
-    toc = time.time()
-    logger.info(f"Time for filtering data: {toc-tic}", flush=True)
-
-    tic = time.time()
-    loss = BayesianYM(
+    solver = _compute_inversion(
+        loss_class=BayesianYM,
+        solver_class=BayesianAnalyticalYM,
         prior=prior_emissions.values,
         prior_standard_deviation=prior_standard_deviation.values,
         prior_temporal_correlation=prior_temporal_correlation.values,
@@ -125,17 +139,13 @@ def _run_inversion_ym(
         measurement=measurements.values,
         measurement_covariance=measurement_covariance.values,
     )
-    solver = BayesianAnalyticalYM(loss)
     posterior_emissions, prior_standard_deviations = solver()
-    toc = time.time()
-    logger.info(f"Time for setup and inversion: {toc-tic}", flush=True)
     posterior_emissions = xr.DataArray(
         posterior_emissions, coords=state_coordinates
     ).unstack()
     posterior_std = xr.DataArray(
         prior_standard_deviations, coords=state_coordinates
     ).unstack()
-
     inversion_result = xr.merge(
         [
             prior_emissions.unstack().rename("prior_emissions"),
@@ -149,9 +159,114 @@ def _run_inversion_ym(
     return inversion_result
 
 
+def _setup_restacking(
+    prior_loader: PriorLoader,
+) -> tuple[dict, list, list, list, dict]:
+    """
+    Setup restacking based on the prior loader.
+
+    Args:
+        prior_loader (PriorLoader): Prior loader used to analyze prior shape.
+
+    Returns:
+        tuple[dict, list, list, list, dict]: Dictionary of dimensions to stack, state
+        order, footprint order, prior spatial correlation order, prior spatial
+        correlation dimensions to stack.
+    """
+    dims_to_stack = dict()
+    state_order = ["Time", "subsector"]
+    footprint_order = ["measurement", "Time", "subsector"]
+    prior_spatial_correlation_order = ["subsector0", "subsector1"]
+    prior_spatial_correlation_dims_to_stack = dict()
+    if "sector" in prior_loader.prior.coords:
+        dims_to_stack["subsector_sector"] = ["subsector", "sector"]
+        state_order = ["Time", "subsector_sector"]
+        footprint_order = ["measurement", "Time", "subsector_sector"]
+        prior_spatial_correlation_order = ["subsector0_sector0", "subsector1_sector1"]
+        prior_spatial_correlation_dims_to_stack = dict(
+            subsector0_sector0=["subsector0", "sector0"],
+            subsector1_sector1=["subsector1", "sector1"],
+        )
+    return (
+        dims_to_stack,
+        state_order,
+        footprint_order,
+        prior_spatial_correlation_order,
+        prior_spatial_correlation_dims_to_stack,
+    )
+
+
+def _load_inversion_data(
+    prior_loader: PriorLoader,
+    prior_covariance_loader: PriorCovarianceLoader,
+    footprint_loader: FootprintLoader,
+    measurement_loader: MeasurementLoader,
+    measurement_covariance_loader: MeasurementCovarianceLoader,
+    target_loader: TargetLoader,
+) -> tuple[xr.DataArray]:
+    """
+    Load inversion data.
+
+    Args:
+        prior_loader (PriorLoader): Prior loader.
+        prior_covariance_loader (PriorCovarianceLoader): Prior covariance loader.
+        footprint_loader (FootprintLoader): Footprint loader.
+        measurement_loader (MeasurementLoader): Measurement loader.
+        measurement_covariance_loader (MeasurementCovarianceLoader): Measurement
+        covariance loader.
+        target_loader (TargetLoader): Target loader.
+
+    Returns:
+        tuple[xr.DataArray]: Tuple of prior emissions, prior standard deviation, prior
+        temporal correlation, prior spatial correlation, footprints, target emissions,
+        measurements, measurement covariance.
+    """
+    prior_emissions = prior_loader.prior.astype(FLOAT_PRECISION)
+    prior_standard_deviation = prior_covariance_loader.prior_std.astype(FLOAT_PRECISION)
+    prior_temporal_correlation = prior_covariance_loader.temporal_correlation.astype(
+        FLOAT_PRECISION
+    )
+    prior_spatial_correlation = prior_covariance_loader.spatial_correlation.astype(
+        FLOAT_PRECISION
+    )
+    footprints = footprint_loader.footprint.astype(FLOAT_PRECISION)
+    target_emissions = target_loader.target.astype(FLOAT_PRECISION)
+    measurements = measurement_loader.measurements.astype(FLOAT_PRECISION).copy()
+    measurement_covariance = (
+        measurement_covariance_loader.load_timeframe(
+            measurement_loader.measurements.MTime[0],
+            measurement_loader.measurements.MTime[-1],
+        )
+        .astype(FLOAT_PRECISION)
+        .copy()
+    )
+    return (
+        prior_emissions,
+        prior_standard_deviation,
+        prior_temporal_correlation,
+        prior_spatial_correlation,
+        footprints,
+        target_emissions,
+        measurements,
+        measurement_covariance,
+    )
+
+
 def restack_coords(
     dataarray: xr.DataArray, unstack_dims, stack_dict=dict(), dim_order=[]
-):
+) -> xr.DataArray:
+    """
+    Restack coordinates.
+
+    Args:
+        dataarray (xr.DataArray): DataArray to restack.
+        unstack_dims (list): List of dimensions to unstack.
+        stack_dict (dict, optional): Dictionary of dimensions to stack. Defaults to dict().
+        dim_order (list, optional): Order of dimensions. Defaults to [].
+
+    Returns:
+        xr.DataArray: Restacked DataArray.
+    """
     if not unstack_dims == []:
         dataarray = dataarray.unstack(*unstack_dims)
     if not stack_dict == dict():
@@ -172,83 +287,51 @@ def main(args):
     output_buffer_path = output_dir / output_name.split(".")[0]
     output_buffer_path.mkdir(exist_ok=True, parents=True)
 
-    # client = Client()
+    client = Client()
 
     # initialize loaders based on the config
-    target_loader: TargetLoader = eval(config["target"]["target_loader"])(
-        **get_kwargs(config, "target")
-    )
-    prior_loader: PriorLoader = eval(config["prior"]["prior_loader"])(
-        target_loader, **get_kwargs(config, "prior")
-    )
-    prior_covariance_loader: PriorCovarianceLoader = eval(
-        config["prior_covariance"]["prior_covariance_loader"]
-    )(prior_loader, **get_kwargs(config, "prior_covariance"))
-
-    footprint_loader: FootprintLoader = eval(config["footprint"]["footprint_loader"])(
-        **get_kwargs(config, "footprint")
-    )
-    measurement_loader: MeasurementLoader = eval(
-        config["measurement"]["measurement_loader"]
-    )(target_loader, footprint_loader, **get_kwargs(config, "measurement"))
-    measurement_covariance_loader: MeasurementCovarianceLoader = eval(
-        config["measurement_covariance"]["measurement_covariance_loader"]
-    )(measurement_loader, **get_kwargs(config, "measurement_covariance"))
+    (
+        target_loader,
+        prior_loader,
+        prior_covariance_loader,
+        footprint_loader,
+        measurement_loader,
+        measurement_covariance_loader,
+    ) = _initialize_loaders(config)
 
     # select station permutations
-    logger.info("Setting up permutations", flush=True)
-    if "permutation_seed" in config:
-        global_state = np.random.get_state()
-        np.random.seed(config["permutation_seed"])
+    logger.info("Setting up permutations")
+    mplace_value_permutations = _prepare_permutations(config, measurement_loader)
 
-    mplace_value_permutations = [
-        np.random.choice(
-            measurement_loader.measurements.unstack().MPlace,
-            config["n_stations"],
-            replace=False,
-        )
-        for _ in range(config["n_permutations"])
-    ]
+    logger.info("Setting up restacking")
+    (
+        dims_to_stack,
+        state_order,
+        footprint_order,
+        prior_spatial_correlation_order,
+        prior_spatial_correlation_dims_to_stack,
+    ) = _setup_restacking(prior_loader)
 
-    if "permutation_seed" in config:
-        np.random.set_state(global_state)
-    logger.info("Setting up restacking", flush=True)
-    dims_to_stack = dict()
-    state_order = ["Time", "subsector"]
-    footprint_order = ["measurement", "Time", "subsector"]
-    prior_spatial_correlation_order = ["subsector0", "subsector1"]
-    prior_spatial_correlation_dims_to_stack = dict()
-    if "sector" in prior_loader.prior.coords:
-        dims_to_stack["subsector_sector"] = ["subsector", "sector"]
-        state_order = ["Time", "subsector_sector"]
-        footprint_order = ["measurement", "Time", "subsector_sector"]
-        prior_spatial_correlation_order = ["subsector0_sector0", "subsector1_sector1"]
-        prior_spatial_correlation_dims_to_stack = dict(
-            subsector0_sector0=["subsector0", "sector0"],
-            subsector1_sector1=["subsector1", "sector1"],
-        )
-
-    logger.info("Loading Prior values and covariance", flush=True)
-    prior_emissions = prior_loader.prior.astype(FLOAT_PRECISION)
-    prior_standard_deviation = prior_covariance_loader.prior_std.astype(FLOAT_PRECISION)
-    prior_temporal_correlation = prior_covariance_loader.temporal_correlation.astype(
-        FLOAT_PRECISION
+    logger.info("Loading data")
+    (
+        prior_emissions,
+        prior_standard_deviation,
+        prior_temporal_correlation,
+        prior_spatial_correlation,
+        footprints,
+        target_emissions,
+        measurements,
+        measurement_covariance,
+    ) = _load_inversion_data(
+        prior_loader,
+        prior_covariance_loader,
+        footprint_loader,
+        measurement_loader,
+        measurement_covariance_loader,
+        target_loader,
     )
-    prior_spatial_correlation = prior_covariance_loader.spatial_correlation.astype(
-        FLOAT_PRECISION
-    )
-    logger.info("Loading Footprints values", flush=True)
-    footprints = footprint_loader.footprint.astype(FLOAT_PRECISION)
-    logger.info("Loading Target values", flush=True)
-    target_emissions = target_loader.target.astype(FLOAT_PRECISION)
-    if "sector" in prior_loader.prior.coords:
-        logger.info("Combining spatial and sector correlation", flush=True)
-        prior_spatial_correlation = (
-            prior_spatial_correlation
-            * prior_covariance_loader.sector_correlation.astype(FLOAT_PRECISION)
-        )
 
-    logger.info("Restacking data", flush=True)
+    logger.info("Restacking data")
     prior_emissions = restack_coords(
         prior_emissions, ["state"], dims_to_stack, state_order
     )
@@ -264,18 +347,6 @@ def main(args):
         [],
         prior_spatial_correlation_dims_to_stack,
         prior_spatial_correlation_order,
-    )
-
-    logger.info("Loading Measurement values", flush=True)
-    measurements = measurement_loader.measurements.astype(FLOAT_PRECISION).copy()
-    logger.info("Loading Measurement covariance", flush=True)
-    measurement_covariance = (
-        measurement_covariance_loader.load_timeframe(
-            measurement_loader.measurements.MTime[0],
-            measurement_loader.measurements.MTime[-1],
-        )
-        .astype(FLOAT_PRECISION)
-        .copy()
     )
     # Start osses
     for i, mplace_values in tqdm(
@@ -298,7 +369,7 @@ def main(args):
         )
         inversion_result.to_netcdf(output_buffer_path / f"permutation_{i}.nc")
 
-    # client.restart(wait_for_workers=True)
+    client.restart(wait_for_workers=True)
 
     # Combine all permutations and save the result
     xr.open_mfdataset(
@@ -312,7 +383,7 @@ def main(args):
         file.unlink()
 
     output_buffer_path.rmdir()
-    # client.close()
+    client.close()
 
 
 if __name__ == "__main__":
