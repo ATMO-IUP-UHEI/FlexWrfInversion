@@ -32,7 +32,6 @@ output_name: ''                 # Name of the output file
 ```
 """
 
-import time
 from pathlib import Path
 
 import numpy as np
@@ -40,50 +39,16 @@ import xarray as xr
 import yaml
 from dask.distributed import Client
 from loguru import logger
-from pyinverse.loss import Bayesian, BayesianYM
-from pyinverse.solver import BayesianAnalytical, BayesianAnalyticalYM
+from pyinverse.loss import BayesianYM
+from pyinverse.solver import BayesianAnalyticalYM
 from tqdm.auto import tqdm
 
-# flake8: noqa
-from flexwrfinversion.loaders.footprint import (
-    FlexibleFootprintLoaderAnthBio,
-    FlexibleFootprintLoaderAnthBioCo,
-    FlexibleFootprintLoaderTotal,
-    FootprintLoader,
-)
-from flexwrfinversion.loaders.measurement import (
-    FlexibleMeasurementLoaderTotal,
-    FlexibleMeasurementLoaderTotalCo,
-    MeasurementLoader,
-)
-from flexwrfinversion.loaders.measurement_covariance import (
-    ConstantNoCorrelation,
-    ConstantNoCorrelationCO,
-    MeasurementCovarianceLoader,
-)
-from flexwrfinversion.loaders.prior import (
-    FlatPrior,
-    FlexiblePriorLoaderTotal_ShiftToBiospheric,
-    PriorLoader,
-    PriorLoaderAnthBio_RelativeError_PointExtra,
-    PriorLoaderAnthBioCo_RelativeError_PointExtra,
-)
-from flexwrfinversion.loaders.prior_covariance import (
-    DifferenceOfPriorToTarget,
-    DifferenceOfPriorToTargetWithCO_Correlation,
-    PriorCovarianceLoader,
-    RelativeError,
-    RelativeErrorWithSpatialCorrelation,
-    TargetAsError,
-    TargetAsErrorNoCorrelation,
-    TargetAsErrorWithCO_Correlation,
-)
-from flexwrfinversion.loaders.target import (
-    FlexibleTargetLoaderAnthBio,
-    FlexibleTargetLoaderAnthBioCo,
-    FlexibleTargetLoaderTotal,
-    TargetLoader,
-)
+from flexwrfinversion.loaders.footprint import FootprintLoader
+from flexwrfinversion.loaders.measurement import MeasurementLoader
+from flexwrfinversion.loaders.measurement_covariance import MeasurementCovarianceLoader
+from flexwrfinversion.loaders.prior import PriorLoader
+from flexwrfinversion.loaders.prior_covariance import PriorCovarianceLoader
+from flexwrfinversion.loaders.target import TargetLoader
 from flexwrfinversion.run_osse import (
     _compute_inversion,
     _get_args,
@@ -252,7 +217,7 @@ def _load_inversion_data(
     )
 
 
-def restack_coords(
+def _restack_coords(
     dataarray: xr.DataArray, unstack_dims, stack_dict=dict(), dim_order=[]
 ) -> xr.DataArray:
     """
@@ -261,7 +226,8 @@ def restack_coords(
     Args:
         dataarray (xr.DataArray): DataArray to restack.
         unstack_dims (list): List of dimensions to unstack.
-        stack_dict (dict, optional): Dictionary of dimensions to stack. Defaults to dict().
+        stack_dict (dict, optional): Dictionary of dimensions to stack. Defaults to
+            dict().
         dim_order (list, optional): Order of dimensions. Defaults to [].
 
     Returns:
@@ -332,17 +298,17 @@ def main(args):
     )
 
     logger.info("Restacking data")
-    prior_emissions = restack_coords(
+    prior_emissions = _restack_coords(
         prior_emissions, ["state"], dims_to_stack, state_order
     )
-    prior_standard_deviation = restack_coords(
+    prior_standard_deviation = _restack_coords(
         prior_standard_deviation, ["state"], dims_to_stack, state_order
     )
-    target_emissions = restack_coords(
+    target_emissions = _restack_coords(
         target_emissions, ["state"], dims_to_stack, state_order
     )
-    footprints = restack_coords(footprints, ["state"], dims_to_stack, footprint_order)
-    prior_spatial_correlation = restack_coords(
+    footprints = _restack_coords(footprints, ["state"], dims_to_stack, footprint_order)
+    prior_spatial_correlation = _restack_coords(
         prior_spatial_correlation,
         [],
         prior_spatial_correlation_dims_to_stack,

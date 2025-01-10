@@ -181,13 +181,13 @@ def _select_sites(
         measurements, measurement covariance, footprint, and site selection. Site
         selection is a boolean array indicating the selected sites.
     """
-    measurements = measurements.isel(measurement=sites)
+    measurements = measurements.isel(measurement=measurements.MPlace.isin(sites))
     measurement_covariance = measurement_covariance.isel(
         measurement0=measurement_covariance.MPlace0.isin(sites),
         measurement1=measurement_covariance.MPlace1.isin(sites),
     )
-    footprint = footprint.isel(measurement=sites)
-    return measurements, measurement_covariance, footprint, sites
+    footprint = footprint.isel(measurement=footprint.MPlace.isin(sites))
+    return measurements, measurement_covariance, footprint
 
 
 def _compute_inversion(

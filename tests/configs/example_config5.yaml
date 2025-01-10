@@ -1,8 +1,11 @@
+footprint_measurement:
+  keep_only: [site00]
+
 prior:
   prior_loader: 'FlatPrior'              # Name of the prior loader class
   kwargs: {} 
 prior_covariance:
-  prior_covariance_loader: 'TargetAsErrorNoCorrelation'   # Name of the prior covariance loader class
+  prior_covariance_loader: 'TargetAsError'   # Name of the prior covariance loader class
   kwargs: {}                 # Arguments to pass to the prior covariance loader
 target:
   target_loader: 'FlexibleTargetLoaderAnthBioCo'             # Name of the target loader class
@@ -20,7 +23,6 @@ measurement:
     measurement_file_city_co: /work/bb1170/RUN/b381737/software/repositories/FlexWrfInversion/tests/data/example_directory_0/remapped_data/spring/munich/true/true_concentrations.nc
     measurement_file_germany_co2: /work/bb1170/RUN/b381737/software/repositories/FlexWrfInversion/tests/data/example_directory_0/remapped_data/spring/germany/true/true_concentrations_sums.nc
     measurement_file_germany_co: /work/bb1170/RUN/b381737/software/repositories/FlexWrfInversion/tests/data/example_directory_0/remapped_data/spring/germany/true/true_concentrations_vprm_co.nc
-    keep_only: [site00]
 measurement_covariance:          
   measurement_covariance_loader: 'ConstantNoCorrelationCO' # Name of the measurement covariance loader class
   kwargs: 
@@ -35,7 +37,6 @@ footprint:
     footprint_file_germany_bio: /work/bb1170/RUN/b381737/software/repositories/FlexWrfInversion/tests/data/example_directory_0/remapped_data/spring/germany/true/remapped_footprints_vprm_co_3H.nc
     footprint_file_germany_ant: /work/bb1170/RUN/b381737/software/repositories/FlexWrfInversion/tests/data/example_directory_0/remapped_data/spring/germany/true/remapped_footprints_sums_3H.nc
     footprint_file_germany_co: /work/bb1170/RUN/b381737/software/repositories/FlexWrfInversion/tests/data/example_directory_0/remapped_data/spring/germany/true/remapped_footprints_vprm_co_3H.nc
-    keep_only: [site00]
 n_permutations: 1               # Number of permutations to run
 n_stations: 1                   # Number of stations to use
 output_dir: '/work/bb1170/RUN/b381737/software/repositories/FlexWrfInversion/tests/data/example_directory_0/output'                  # Directory to save output
