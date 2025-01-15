@@ -6,10 +6,10 @@ authors = ["Christopher Lüken-Winkels <christopher.lueken.winkels@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = "^3.11"
 xarray = "^2024.5.0"
 dask = "^2024.5.2"
-pyinverse = {git = "git@github.com:christopher-lw/pyinverse.git", branch = "implement-yadav-version"}
+pyinverse = {git = "git@github.com:ATMO-IUP-UHEI/pyinverse.git"}
 tqdm = "^4.66.4"
 sparse = "^0.15.4"
 distributed = "^2024.11.2"

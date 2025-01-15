@@ -143,7 +143,7 @@ def _setup_restacking(
     footprint_order = ["measurement", "Time", "subsector"]
     prior_spatial_correlation_order = ["subsector0", "subsector1"]
     prior_spatial_correlation_dims_to_stack = dict()
-    if "sector" in prior_loader.prior.coords:
+    if "sector" in prior_loader.prior.dims:
         dims_to_stack["subsector_sector"] = ["subsector", "sector"]
         state_order = ["Time", "subsector_sector"]
         footprint_order = ["measurement", "Time", "subsector_sector"]
@@ -170,7 +170,7 @@ def _load_inversion_data(
     target_loader: TargetLoader,
 ) -> tuple[xr.DataArray]:
     """
-    Load inversion data.
+    Load inversion data. All data is cast to float32. Returns flattened data.
 
     Args:
         prior_loader (PriorLoader): Prior loader.
