@@ -27,6 +27,8 @@ n_permutations: #               # Number of permutations to run
 n_stations: #                   # Number of stations to use
 output_dir: ''                  # Directory to save output
 output_name: ''                 # Name of the output file
+(permutation_seed: #)           # Seed for the permutation (optional)
+(start_index: #)                # Start index for the permutation (optional)
 ```
 """
 
@@ -42,14 +44,14 @@ from tqdm.auto import tqdm
 
 # flake8: noqa
 from flexwrfinversion.loaders.footprint import (
+    FlexibleFootprintLoaderAnthBio,
+    FlexibleFootprintLoaderAnthBioCo,
+    FlexibleFootprintLoaderTotal,
     FootprintLoader,
-    LoadFootprintAnthAndBioSectors,
-    LoadFootprintAnthBioCO,
-    LoadFootprintForTotalInCity,
 )
 from flexwrfinversion.loaders.measurement import (
-    MeasurementFromFile,
-    MeasurementFromFileCO,
+    FlexibleMeasurementLoaderTotal,
+    FlexibleMeasurementLoaderTotalCo,
     MeasurementLoader,
 )
 from flexwrfinversion.loaders.measurement_covariance import (
@@ -57,18 +59,28 @@ from flexwrfinversion.loaders.measurement_covariance import (
     ConstantNoCorrelationCO,
     MeasurementCovarianceLoader,
 )
-from flexwrfinversion.loaders.prior import FlatPrior, PriorLoader, ShiftToBiospheric
+from flexwrfinversion.loaders.prior import (
+    FlatPrior,
+    FlexiblePriorLoaderTotal_ShiftToBiospheric,
+    PriorLoader,
+    PriorLoaderAnthBio_RelativeError_PointExtra,
+    PriorLoaderAnthBioCo_RelativeError_PointExtra,
+)
 from flexwrfinversion.loaders.prior_covariance import (
+    DifferenceOfPriorToTarget,
+    DifferenceOfPriorToTargetWithCO_Correlation,
     PriorCovarianceLoader,
+    RelativeError,
     RelativeErrorWithSpatialCorrelation,
+    TargetAsError,
     TargetAsErrorNoCorrelation,
     TargetAsErrorWithCO_Correlation,
 )
 from flexwrfinversion.loaders.target import (
+    FlexibleTargetLoaderAnthBio,
+    FlexibleTargetLoaderAnthBioCo,
+    FlexibleTargetLoaderTotal,
     TargetLoader,
-    TargetLoaderAnthAndBioSectors,
-    TargetLoaderAnthBioCO,
-    TargetLoaderTotalInCity,
 )
 
 # flake8: noqa
@@ -93,32 +105,40 @@ def _run_inversion(
 ):
     site_selection = measurement_loader.measurements.unstack().MPlace.isin(sites)
 
+    # Initialize lists to save results
     prior_std = []
     posterior_emissions = []
     posterior_std = []
     averaging_kernel_diag = []
     averaging_kernel_sum = []
 
+    # Start inversion that operates dayly (three days run only center one is kept)
     for i, (start_date, end_date) in tqdm(
         enumerate(zip(dates[:-1], dates[1:])), total=len(dates) - 1
     ):
+        # Set times to load
         emission_start_time = start_date - TIME_BUFFER_FOR_INVERSION_WINDOW
         emission_end_time = end_date + TIME_BUFFER_FOR_INVERSION_WINDOW
         measurement_start_time = start_date
         measurement_end_time = end_date + TIME_BUFFER_FOR_INVERSION_WINDOW
 
+        # Load data for set timeframes
         prior_emissions = prior_loader.load_timeframe(
             emission_start_time, emission_end_time
         )
+
         prior_emission_covariance = prior_covariance_loader.load_timeframe(
             emission_start_time, emission_end_time
         )
+
         measurements = measurement_loader.load_timeframe(
             measurement_start_time, measurement_end_time
         )
+
         measurement_covariance = measurement_covariance_loader.load_timeframe(
             measurement_start_time, measurement_end_time
         )
+
         footprint = footprint_loader.load_timeframe(
             emission_start_time,
             emission_end_time,
@@ -126,6 +146,7 @@ def _run_inversion(
             measurement_end_time,
         )
 
+        # Filter data for the sites selected in the given permutation
         measurements = measurements.where(measurements.MPlace.isin(sites), drop=True)
         measurement_covariance = measurement_covariance.where(
             measurement_covariance.MPlace0.isin(sites), drop=True
@@ -134,6 +155,7 @@ def _run_inversion(
 
         state_coordinates = prior_emissions.coords
 
+        # Inversion using the `pyinverse` module
         loss = Bayesian(
             x_prior=prior_emissions.values,
             cov_prior=prior_emission_covariance.values,
@@ -146,6 +168,7 @@ def _run_inversion(
 
         partial_posterior_emissions, partial_posterior_covariance = solver()
 
+        # Build xr.DataArrays from the numpy output
         partial_posterior_emissions = xr.DataArray(
             partial_posterior_emissions, coords=state_coordinates
         ).unstack()
@@ -193,6 +216,7 @@ def _run_inversion(
         )
         averaging_kernel_sum.append(partial_averaging_kernel_sum)
 
+    # Concatenate the daily results and merge dataarrays
     prior_std = xr.concat(prior_std, dim="Time")
     posterior_emissions = xr.concat(posterior_emissions, dim="Time")
     posterior_std = xr.concat(posterior_std, dim="Time")
@@ -221,12 +245,13 @@ def main(args):
     with args.config.open("r") as f:
         config = yaml.safe_load(f)
 
+    # build paths for the inversion and setup directories
     output_dir = Path(config["output_dir"])
     output_name = config["output_name"]
     output_buffer_path = output_dir / output_name.split(".")[0]
     output_buffer_path.mkdir(exist_ok=True, parents=True)
 
-    # initialize prior loader based on strin in config
+    # initialize loaders based on the config
     target_loader: TargetLoader = eval(config["target"]["target_loader"])(
         **config["target"]["kwargs"]
     )
@@ -247,19 +272,38 @@ def main(args):
         config["measurement_covariance"]["measurement_covariance_loader"]
     )(measurement_loader, **config["measurement_covariance"]["kwargs"])
 
-    for i in tqdm(range(config["n_permutations"])):
-        mplace_values = np.random.choice(
+    # select station permutations
+    if "permutation_seed" in config:
+        global_state = np.random.get_state()
+        np.random.seed(config["permutation_seed"])
+
+    mplace_value_permutations = [
+        np.random.choice(
             measurement_loader.measurements.unstack().MPlace,
             config["n_stations"],
             replace=False,
         )
+        for _ in range(config["n_permutations"])
+    ]
 
+    if "permutation_seed" in config:
+        np.random.set_state(global_state)
+
+    # Start osses
+    for i, mplace_values in tqdm(
+        enumerate(mplace_value_permutations), total=len(mplace_value_permutations)
+    ):
+        if "start_index" in config:
+            if i < config["start_index"]:
+                continue
+        # set dates for the inversion
         dates = np.arange(
             prior_loader.prior.Time[0].values,
             prior_loader.prior.Time[-1].values + np.timedelta64(1, "D"),
             dtype="datetime64[D]",
         )
 
+        # Obtain actual inversionresult
         inversion_result = _run_inversion(
             dates,
             mplace_values,
@@ -271,14 +315,17 @@ def main(args):
             measurement_covariance_loader,
         )
 
+        # Save inversion result to buffer file
         inversion_result.to_netcdf(output_buffer_path / f"permutation_{i}.nc")
 
+    # Combine all permutations and save the result
     xr.open_mfdataset(
         output_buffer_path.glob("permutation_*.nc"),
         combine="nested",
         concat_dim="permutation",
     ).to_netcdf(output_dir / output_name)
 
+    # Delete the buffer files
     for file in output_buffer_path.glob("permutation_*.nc"):
         file.unlink()
 

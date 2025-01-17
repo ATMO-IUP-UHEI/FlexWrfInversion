@@ -2,7 +2,7 @@ prior:
   prior_loader: 'ShiftToBiospheric'              # Name of the prior loader class
   kwargs: {}                    # Arguments to pass to the prior loader
 prior_covariance:
-  prior_covariance_loader: 'RelativeErrorWithSpatialCorrelation'   # Name of the prior covariance loader class
+  prior_covariance_loader: 'RelativeError'   # Name of the prior covariance loader class
   kwargs: {}                    # Arguments to pass to the prior covariance loader
 target:
   target_loader: 'TargetLoaderTotalInCity'             # Name of the target loader class

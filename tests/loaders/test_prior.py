@@ -1,82 +1,6 @@
-from pathlib import Path
-
+import numpy as np
 import pytest
 import xarray as xr
-
-from flexwrfinversion.loaders.prior import FlatPrior, ShiftToBiospheric
-from flexwrfinversion.loaders.target import (
-    TargetLoaderAnthAndBioSectors,
-    TargetLoaderAnthBioCO,
-    TargetLoaderTotalInCity,
-)
-
-EXAMPLE_DIRECTORY_0 = Path(__file__).parent.parent / "data" / "example_directory_0"
-
-
-@pytest.fixture
-def shift_to_biospheric():
-    target_loader = TargetLoaderTotalInCity(
-        remapped_data_path=EXAMPLE_DIRECTORY_0 / "remapped_data",
-        season="spring",
-        city="munich",
-        prior_type="true",
-        time_resolution=3,
-    )
-    return ShiftToBiospheric(target_loader=target_loader)
-
-
-@pytest.fixture
-def flat_prior():
-    target_loader = TargetLoaderAnthAndBioSectors(
-        remapped_data_path=EXAMPLE_DIRECTORY_0 / "remapped_data",
-        season="spring",
-        city="munich",
-        prior_type="true",
-        time_resolution=3,
-    )
-    return FlatPrior(target_loader=target_loader, value=0.1)
-
-
-@pytest.fixture
-def flat_prior_with_co():
-    target_loader = TargetLoaderAnthBioCO(
-        remapped_data_path=EXAMPLE_DIRECTORY_0 / "remapped_data",
-        season="spring",
-        city="munich",
-        prior_type="true",
-        time_resolution=3,
-    )
-    return FlatPrior(target_loader=target_loader, value=0.1)
-
-
-class Test_ShiftToBiospheric:
-    def test_prior(self, shift_to_biospheric):
-        assert shift_to_biospheric.prior is not None
-        assert isinstance(shift_to_biospheric.prior, xr.DataArray)
-        assert len(shift_to_biospheric.prior.dims) == 1
-        assert (
-            shift_to_biospheric.prior != shift_to_biospheric.target_loader.target
-        ).any()
-        assert (
-            (shift_to_biospheric.prior > 0)
-            == (shift_to_biospheric.target_loader.target > 0)
-        ).all()
-        assert set(shift_to_biospheric.prior.dims) == {"state"}
-
-    def test_load_timeframe(self, shift_to_biospheric):
-        prior = shift_to_biospheric.prior
-        start_time = prior["Time"].values[0]
-        end_time = prior["Time"].values[3]
-
-        prior_timeframe = shift_to_biospheric.load_timeframe(
-            start_time=start_time,
-            end_time=end_time,
-        )
-
-        assert prior_timeframe is not None
-        assert isinstance(prior_timeframe, xr.DataArray)
-        assert len(prior_timeframe.dims) == 1
-        assert set(prior_timeframe.dims) == {"state"}
 
 
 class Test_FlatPrior:
@@ -125,4 +49,93 @@ class Test_FlatPrior:
         assert (prior_timeframe_with_co == 0.1).all()
         assert {"CO2_ANT_TOTAL", "E_CO2_VPRM", "E_CO"} == set(
             prior_timeframe_with_co.sector.values
+        )
+
+
+class Test_FlexiblePriorLoaderTotal_ShiftToBiospheric:
+    def test_prior(self, flexible_prior_loader_total_shift_to_biospheric):
+        prior = flexible_prior_loader_total_shift_to_biospheric.prior
+        assert prior is not None
+        assert isinstance(prior, xr.DataArray)
+        assert len(prior.dims) == 1
+        assert set(prior.dims) == {"state"}
+
+    def test_load_timeframe(self, flexible_prior_loader_total_shift_to_biospheric):
+        prior = flexible_prior_loader_total_shift_to_biospheric.prior
+        start_time = prior["Time"].values[0]
+        end_time = prior["Time"].values[3]
+
+        prior_timeframe = (
+            flexible_prior_loader_total_shift_to_biospheric.load_timeframe(
+                start_time=start_time,
+                end_time=end_time,
+            )
+        )
+
+        assert prior_timeframe is not None
+        assert isinstance(prior_timeframe, xr.DataArray)
+        assert len(prior_timeframe.dims) == 1
+        assert set(prior_timeframe.dims) == {"state"}
+
+
+class Test_PriorLoaderAnthBio_RelativeError_PointExtra:
+    def test_prior(self, prior_loader_anth_bio_relative_error_point_extra):
+        prior = prior_loader_anth_bio_relative_error_point_extra.prior
+        target = prior_loader_anth_bio_relative_error_point_extra.target_loader.target
+        anth_prior = prior.sel(sector="CO2_ANT_TOTAL")
+        bio_prior = prior.sel(sector="E_CO2_VPRM")
+        anth_target = target.sel(sector="CO2_ANT_TOTAL")
+        bio_target = target.sel(sector="E_CO2_VPRM")
+
+        rel_difference_anth = 1 - np.abs(anth_prior / anth_target)
+        rel_difference_bio = np.abs(1 - np.abs(bio_prior / bio_target))
+
+        assert prior is not None
+        assert isinstance(prior, xr.DataArray)
+        assert len(prior.dims) == 1
+        assert set(prior.dims) == {"state"}
+        assert not np.allclose(prior, target, atol=0, rtol=1e-3)
+        assert ((rel_difference_anth >= 0.1) & (rel_difference_anth <= 0.5)).all()
+        assert np.allclose(
+            rel_difference_bio.where(~rel_difference_bio.isnull(), drop=True),
+            0.3,
+            atol=0,
+            rtol=1e-3,
+        )
+
+
+class Test_PriorLoaderAnthBioCo_RelativeError_PointExtra:
+    def test_prior(self, prior_loader_anth_bio_co_relative_error_point_extra):
+        prior = prior_loader_anth_bio_co_relative_error_point_extra.prior
+        target = (
+            prior_loader_anth_bio_co_relative_error_point_extra.target_loader.target
+        )
+        anth_prior = prior.sel(sector="CO2_ANT_TOTAL")
+        bio_prior = prior.sel(sector="E_CO2_VPRM")
+        co_prior = prior.sel(sector="E_CO")
+        anth_target = target.sel(sector="CO2_ANT_TOTAL")
+        bio_target = target.sel(sector="E_CO2_VPRM")
+        co_target = target.sel(sector="E_CO")
+
+        rel_difference_anth = 1 - np.abs(anth_prior / anth_target)
+        rel_difference_bio = np.abs(1 - np.abs(bio_prior / bio_target))
+        rel_difference_co = np.abs(1 - np.abs(co_prior / co_target))
+
+        assert prior is not None
+        assert isinstance(prior, xr.DataArray)
+        assert len(prior.dims) == 1
+        assert set(prior.dims) == {"state"}
+        assert not np.allclose(prior, target, atol=0, rtol=1e-3)
+        assert ((rel_difference_anth >= 0.1) & (rel_difference_anth <= 0.5)).all()
+        assert np.allclose(
+            rel_difference_bio.where(~rel_difference_bio.isnull(), drop=True),
+            0.3,
+            atol=0,
+            rtol=1e-3,
+        )
+        assert np.allclose(
+            rel_difference_co.where(~rel_difference_co.isnull(), drop=True),
+            0.2,
+            atol=0,
+            rtol=1e-3,
         )
