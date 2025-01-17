@@ -12,6 +12,8 @@ from flexwrfinversion.loaders.prior import (
     PriorLoader,
 )
 
+FLOAT_PRECISION = np.float32
+
 
 class TargetAsErrorNoCorrelation:
     def __init__(self, *args, **kwargs):
@@ -88,6 +90,9 @@ class PriorCovarianceLoader(ABC):
                 self._spatial_correlation = xr.open_dataarray(
                     self._spatial_correlation_path
                 ).compute()
+            self._spatial_correlation = self._spatial_correlation.sortby(
+                "subsector0"
+            ).sortby("subsector1")
         return self._spatial_correlation
 
     @property
@@ -117,7 +122,9 @@ class PriorCovarianceLoader(ABC):
                     )
                 )
                 correlation = correlation + np.eye(correlation.shape[0])
-                self._sector_correlation = correlation
+                self._sector_correlation = correlation.sortby("sector0").sortby(
+                    "sector1"
+                )
             return self._sector_correlation
         else:
             return None
@@ -170,7 +177,7 @@ class PriorCovarianceLoader(ABC):
                 )
                 * correlation
             )
-            .astype(np.float32)
+            .astype(FLOAT_PRECISION)
             .compute()
         )
 
@@ -269,6 +276,9 @@ class TargetAsErrorWithCO_Correlation(PriorCovarianceLoader):
         spatial_correlation_path: str | Path = None,
         co2_minimum_error: float = None,
         co_minimum_error: float = None,
+        ant_sector_key: str = "CO2_ANT_TOTAL",
+        bio_sector_key: str = "E_CO2_VPRM",
+        co_sector_key: str = "E_CO",
     ):
         """Prior covariance loader for anthropogenic and biogenic CO2 together with CO.
         A correlation is built into the covariace between CO2_anth and CO.
@@ -281,12 +291,20 @@ class TargetAsErrorWithCO_Correlation(PriorCovarianceLoader):
                  correlation to be used. Defaults to None.
             co2_minimum_error (float, optional): Minimum error for CO2. Defaults to None.
             co_minimum_error (float, optional): Minimum error for CO. Defaults to None.
+            ant_sector_key (str, optional): Sector key for anthropogenic CO2. Defaults
+                 to "CO2_ANT_TOTAL".
+            bio_sector_key (str, optional): Sector key for biogenic CO2. Defaults to
+                 "E_CO2_VPRM".
+            co_sector_key (str, optional): Sector key for CO. Defaults to "E_CO".
         """
         super().__init__(prior_loader)
         self._anth_co_correlation = anth_co_correlation
         self._spatial_correlation_path = spatial_correlation_path
         self._co2_minimum_error = co2_minimum_error
         self._co_minimum_error = co_minimum_error
+        self.ant_sector_key = ant_sector_key
+        self.bio_sector_key = bio_sector_key
+        self.co_sector_key = co_sector_key
         self._prior_std = None
 
     @property
@@ -295,20 +313,29 @@ class TargetAsErrorWithCO_Correlation(PriorCovarianceLoader):
             self._prior_std = np.abs(self.prior_loader.target_loader.target)
             if self._co2_minimum_error is not None:
                 self._prior_std = xr.where(
-                    (self.prior_loader.target_loader.target.sector == "CO2_ANT_TOTAL")
+                    (
+                        self.prior_loader.target_loader.target.sector
+                        == self.ant_sector_key
+                    )
                     & (self._prior_std < self._co2_minimum_error),
                     self._co2_minimum_error,
                     self._prior_std,
                 )
                 self._prior_std = xr.where(
-                    (self.prior_loader.target_loader.target.sector == "E_CO2_VPRM")
+                    (
+                        self.prior_loader.target_loader.target.sector
+                        == self.bio_sector_key
+                    )
                     & (self._prior_std < self._co2_minimum_error),
                     self._co2_minimum_error,
                     self._prior_std,
                 )
             if self._co_minimum_error is not None:
                 self._prior_std = xr.where(
-                    (self.prior_loader.target_loader.target.sector == "E_CO")
+                    (
+                        self.prior_loader.target_loader.target.sector
+                        == self.co_sector_key
+                    )
                     & (self._prior_std < self._co_minimum_error),
                     self._co_minimum_error,
                     self._prior_std,
@@ -329,15 +356,15 @@ class TargetAsErrorWithCO_Correlation(PriorCovarianceLoader):
             correlation = correlation + np.eye(correlation.shape[0])
             anth_index = np.argwhere(
                 self.prior_loader.prior.unstack().sector.values
-                == self.prior_loader.target_loader.ANTH_SECTOR_KEY
+                == self.prior_loader.target_loader.ant_sector_key
             ).item()
             co_index = np.argwhere(
                 self.prior_loader.prior.unstack().sector.values
-                == self.prior_loader.target_loader.CO_SECTOR_KEY
+                == self.prior_loader.target_loader.co_sector_key
             ).item()
             correlation[anth_index, co_index] = self._anth_co_correlation
             correlation[co_index, anth_index] = self._anth_co_correlation
-            self._sector_correlation = correlation
+            self._sector_correlation = correlation.sortby("sector0").sortby("sector1")
         return self._sector_correlation
 
 
@@ -353,7 +380,7 @@ class DifferenceOfPriorToTargetWithCO_Correlation(TargetAsErrorWithCO_Correlatio
                     (
                         (
                             self.prior_loader.target_loader.target.sector
-                            == "CO2_ANT_TOTAL"
+                            == self.ant_sector_key
                         )
                         & (self._prior_std < self._co2_minimum_error)
                     ),
@@ -361,14 +388,20 @@ class DifferenceOfPriorToTargetWithCO_Correlation(TargetAsErrorWithCO_Correlatio
                     self._prior_std,
                 )
                 self._prior_std = xr.where(
-                    (self.prior_loader.target_loader.target.sector == "E_CO2_VPRM")
+                    (
+                        self.prior_loader.target_loader.target.sector
+                        == self.bio_sector_key
+                    )
                     & (self._prior_std < self._co2_minimum_error),
                     self._co2_minimum_error,
                     self._prior_std,
                 )
             if self._co_minimum_error is not None:
                 self._prior_std = xr.where(
-                    (self.prior_loader.target_loader.target.sector == "E_CO")
+                    (
+                        self.prior_loader.target_loader.target.sector
+                        == self.co_sector_key
+                    )
                     & (self._prior_std < self._co_minimum_error),
                     self._co_minimum_error,
                     self._prior_std,

@@ -6,6 +6,8 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
+FLOAT_PRECISION = np.float32
+
 
 class TargetLoader(ABC):
     @property
@@ -38,52 +40,91 @@ class TargetLoader(ABC):
         """
         pass
 
+    @staticmethod
+    def open_and_prepare(
+        path: Path,
+    ):
+        """Open the dataset and prepare it for the inversion.
+
+        Args:
+            path (Path): Path to the dataset
+
+        Returns:
+            xr.Dataset: The dataset prepared for the inversion
+        """
+        data = xr.open_dataset(
+            path,
+            chunks="auto",
+        ).fillna(0)
+        try:
+            data = data.drop_dims(["x_stag", "y_stag"])
+        except ValueError:
+            pass
+        return data
+
+    @staticmethod
+    def _combine_subsectors(
+        target1: xr.DataArray,
+        target2: xr.DataArray,
+    ):
+        """Combine target of two different subsectors
+
+        Args:
+            target1 (xr.DataArray): target of the first subsector
+            target2 (xr.DataArray): target of the second subsector
+
+        Returns:
+            xr.DataArray: Combined target
+        """
+        return xr.concat(
+            [
+                target1.assign_coords(subsector=target1.group.values),
+                target2.assign_coords(subsector=target2.group.values),
+            ],
+            dim="subsector",
+        )
+
 
 class FlexibleTargetLoaderTotal(TargetLoader):
-    TOTAL_EMISSION_KEY = "CO2_TOTAL"
     STATE_DIMS = ["subsector", "Time"]
 
     def __init__(
         self,
         target_file_city: str | Path,
         target_file_germany: str | Path,
+        total_sector_key: str = "CO2_TOTAL",
     ):
         """Flexible implementation of target loader for total CO2.
 
         Args:
-            target_file_city (str | Path): File that contatains the emission data for
-                 the city and the field `CO2_TOTAL`
-            target_file_germany (str | Path): File that contatains the emission data for
-                 germany and the field `CO2_TOTAL`
+            target_file_city (str | Path): File that contains the emission data for
+                 the city and the field specified by `total_sector_key`
+            target_file_germany (str | Path): File that contains the emission data for
+                 germany and the field specified by `total_sector_key`
+            total_sector_key (str): Key for the total emission field in the dataset
         """
         self._target_file_city = target_file_city
         self._target_file_germany = target_file_germany
+        self.total_sector_key = total_sector_key
         self._target = None
 
     @property
     def target(self) -> xr.DataArray:
         if self._target is None:
-            target_city = xr.open_dataset(self._target_file_city)[
-                self.TOTAL_EMISSION_KEY
+            target_city = self.open_and_prepare(self._target_file_city)[
+                self.total_sector_key
             ]
-            target_germany = xr.open_dataset(self._target_file_germany)[
-                self.TOTAL_EMISSION_KEY
+            target_germany = self.open_and_prepare(self._target_file_germany)[
+                self.total_sector_key
             ]
             self._target = (
-                xr.concat(
-                    [
-                        target_city.assign_coords(subsector=target_city.group.values),
-                        target_germany.assign_coords(
-                            subsector=target_germany.group.values
-                        ),
-                    ],
-                    dim="subsector",
-                )
-                .stack(state=self.STATE_DIMS)
+                self._combine_subsectors(target_city, target_germany)
                 .sortby("subsector")
-                .astype(np.float32)
+                .stack(state=self.STATE_DIMS)
+                .astype(FLOAT_PRECISION)
                 .compute()
             )
+
         return self._target
 
     def load_timeframe(
@@ -97,9 +138,6 @@ class FlexibleTargetLoaderTotal(TargetLoader):
 
 
 class FlexibleTargetLoaderAnthBio(TargetLoader):
-    ANTH_SECTOR_KEY = "CO2_ANT_TOTAL"
-    BIO_SECTOR_KEY = "E_CO2_VPRM"
-    TOTAL_EMISSION_KEY = "CO2_TOTAL"
     STATE_DIMS = ["subsector", "Time", "sector"]
 
     def __init__(
@@ -108,101 +146,67 @@ class FlexibleTargetLoaderAnthBio(TargetLoader):
         target_file_city_ant: str | Path,
         target_file_germany_bio: str | Path,
         target_file_germany_ant: str | Path,
+        ant_sector_key: str = "CO2_ANT_TOTAL",
+        bio_sector_key: str = "E_CO2_VPRM",
     ):
-        """Flexible implementation of target loader for laoding anthropogenic and
+        """Flexible implementation of target loader for loading anthropogenic and
         biogenic emissions.
 
         Args:
-            target_file_city_bio (str | Path):  Emission file for the city that contains
-                 `E_CO2_VPRM`
+            target_file_city_bio (str | Path): Emission file for the city that contains
+                 the field specified by `bio_sector_key`
             target_file_city_ant (str | Path): Emission file for the city that contains
-                 `CO2_ANT_TOTAL`
+                 the field specified by `ant_sector_key`
             target_file_germany_bio (str | Path): Emission file for germany that contains
-                 `E_CO2_VPRM`
-            target_file_germany_ant (str | Path): Emission file for germany that
-                 contains `CO2_ANT_TOTAL`
+                 the field specified by `bio_sector_key`
+            target_file_germany_ant (str | Path): Emission file for germany that contains
+                 the field specified by `ant_sector_key`
+            ant_sector_key (str): Key for the anthropogenic emission field in the dataset
+            bio_sector_key (str): Key for the biogenic emission field in the dataset
         """
         self._target_file_city_bio = target_file_city_bio
         self._target_file_city_ant = target_file_city_ant
         self._target_file_germany_bio = target_file_germany_bio
         self._target_file_germany_ant = target_file_germany_ant
+        self.ant_sector_key = ant_sector_key
+        self.bio_sector_key = bio_sector_key
         self._target = None
 
     @property
     def target(self) -> xr.DataArray:
         if self._target is None:
-            true_emissions_city = (
-                xr.open_dataset(
-                    self._target_file_city_bio,
-                    chunks="auto",
-                )
-                .drop_dims(["x_stag", "y_stag"])
-                .fillna(0)
-            )[self.BIO_SECTOR_KEY]
-            true_emissions_germany = (
-                xr.open_dataset(
-                    self._target_file_germany_bio,
-                    chunks="auto",
-                )
-                .drop_dims(["x_stag", "y_stag"])
-                .fillna(0)
-            )[self.BIO_SECTOR_KEY]
+            target_city_bio = self.open_and_prepare(
+                self._target_file_city_bio,
+            )[self.bio_sector_key]
+            target_germany_bio = self.open_and_prepare(
+                self._target_file_germany_bio,
+            )[self.bio_sector_key]
 
-            true_emissions_sums_city = (
-                xr.open_dataset(
-                    self._target_file_city_ant,
-                    chunks="auto",
-                )
-                .drop_dims(["x_stag", "y_stag"])
-                .fillna(0)
-            )[self.ANTH_SECTOR_KEY]
-            true_emissions_sums_germany = (
-                xr.open_dataset(
-                    self._target_file_germany_ant,
-                    chunks="auto",
-                )
-                .drop_dims(["x_stag", "y_stag"])
-                .fillna(0)
-            )[self.ANTH_SECTOR_KEY]
+            target_city_ant = self.open_and_prepare(
+                self._target_file_city_ant,
+            )[self.ant_sector_key]
+            target_germany_ant = self.open_and_prepare(
+                self._target_file_germany_ant,
+            )[self.ant_sector_key]
 
             bio_emissions = (
-                xr.concat(
-                    [
-                        true_emissions_city.assign_coords(
-                            subsector=true_emissions_city.group.values
-                        ),
-                        true_emissions_germany.assign_coords(
-                            subsector=true_emissions_germany.group.values
-                        ),
-                    ],
-                    dim="subsector",
-                )
-                .expand_dims(sector=[true_emissions_city.name])
+                self._combine_subsectors(target_city_bio, target_germany_bio)
+                .expand_dims(sector=[target_city_bio.name])
                 .sortby("subsector")
             )
 
-            anth_emissions = (
-                xr.concat(
-                    [
-                        true_emissions_sums_city.assign_coords(
-                            subsector=true_emissions_sums_city.group.values
-                        ),
-                        true_emissions_sums_germany.assign_coords(
-                            subsector=true_emissions_sums_germany.group.values
-                        ),
-                    ],
-                    dim="subsector",
-                )
-                .expand_dims(sector=[true_emissions_sums_city.name])
+            ant_emissions = (
+                self._combine_subsectors(target_city_ant, target_germany_ant)
+                .expand_dims(sector=[target_city_ant.name])
                 .sortby("subsector")
             )
 
             self._target = (
-                xr.concat([bio_emissions, anth_emissions], dim="sector")
-                .stack(state=self.STATE_DIMS)
+                xr.concat([bio_emissions, ant_emissions], dim="sector")
                 .sortby("sector")
                 .sortby("subsector")
-                .astype(np.float32)
+                .stack(state=self.STATE_DIMS)
+                .astype(FLOAT_PRECISION)
                 .compute()
             )
         return self._target
@@ -218,9 +222,6 @@ class FlexibleTargetLoaderAnthBio(TargetLoader):
 
 
 class FlexibleTargetLoaderAnthBioCo(TargetLoader):
-    ANTH_SECTOR_KEY = "CO2_ANT_TOTAL"
-    BIO_SECTOR_KEY = "E_CO2_VPRM"
-    CO_SECTOR_KEY = "E_CO"
     STATE_DIMS = ["subsector", "Time", "sector"]
 
     def __init__(
@@ -231,23 +232,29 @@ class FlexibleTargetLoaderAnthBioCo(TargetLoader):
         target_file_germany_bio: str | Path,
         target_file_germany_ant: str | Path,
         target_file_germany_co: str | Path,
+        ant_sector_key: str = "CO2_ANT_TOTAL",
+        bio_sector_key: str = "E_CO2_VPRM",
+        co_sector_key: str = "E_CO",
     ) -> None:
-        """Flexible implementation of target loader for laoding anthropogenic, biogenic
+        """Flexible implementation of target loader for loading anthropogenic, biogenic
         and CO emissions.
 
         Args:
-            target_file_city_bio (str | Path):  Emission file for the city that contains
-                 `E_CO2_VPRM`
+            target_file_city_bio (str | Path): Emission file for the city that contains
+                 the field specified by `bio_sector_key`
             target_file_city_ant (str | Path): Emission file for the city that contains
-                 `CO2_ANT_TOTAL`
+                 the field specified by `ant_sector_key`
             target_file_city_co (str | Path): Emission file for the city that contains
-                 `E_CO`
+                 the field specified by `co_sector_key`
             target_file_germany_bio (str | Path): Emission file for germany that contains
-                 `E_CO2_VPRM`
-            target_file_germany_ant (str | Path): Emission file for germany that
-                 contains `CO2_ANT_TOTAL`
-            target_file_germany_co (str | Path): Emission file for germany that
-                 contains `E_CO`
+                 the field specified by `bio_sector_key`
+            target_file_germany_ant (str | Path): Emission file for germany that contains
+                 the field specified by `ant_sector_key`
+            target_file_germany_co (str | Path): Emission file for germany that contains
+                 the field specified by `co_sector_key`
+            ant_sector_key (str): Key for the anthropogenic emission field in the dataset
+            bio_sector_key (str): Key for the biogenic emission field in the dataset
+            co_sector_key (str): Key for the CO emission field in the dataset
         """
         self._target_file_city_bio = target_file_city_bio
         self._target_file_city_ant = target_file_city_ant
@@ -255,84 +262,55 @@ class FlexibleTargetLoaderAnthBioCo(TargetLoader):
         self._target_file_germany_bio = target_file_germany_bio
         self._target_file_germany_ant = target_file_germany_ant
         self._target_file_germany_co = target_file_germany_co
+        self.ant_sector_key = ant_sector_key
+        self.bio_sector_key = bio_sector_key
+        self.co_sector_key = co_sector_key
         self._target = None
 
     @property
     def target(self) -> xr.DataArray:
         if self._target is None:
-            target_city_bio = xr.open_dataset(self._target_file_city_bio)[
-                self.BIO_SECTOR_KEY
-            ]
-            target_city_ant = xr.open_dataset(self._target_file_city_ant)[
-                self.ANTH_SECTOR_KEY
-            ]
-            target_city_co = xr.open_dataset(self._target_file_city_co)[
-                self.CO_SECTOR_KEY
-            ]
-            target_germany_bio = xr.open_dataset(self._target_file_germany_bio)[
-                self.BIO_SECTOR_KEY
-            ]
-            target_germany_ant = xr.open_dataset(self._target_file_germany_ant)[
-                self.ANTH_SECTOR_KEY
-            ]
-            target_germany_co = xr.open_dataset(self._target_file_germany_co)[
-                self.CO_SECTOR_KEY
-            ]
+            target_city_bio = self.open_and_prepare(
+                self._target_file_city_bio,
+            )[self.bio_sector_key]
+            target_city_ant = self.open_and_prepare(
+                self._target_file_city_ant,
+            )[self.ant_sector_key]
+            target_city_co = self.open_and_prepare(
+                self._target_file_city_co,
+            )[self.co_sector_key]
+            target_germany_bio = self.open_and_prepare(
+                self._target_file_germany_bio,
+            )[self.bio_sector_key]
+            target_germany_ant = self.open_and_prepare(
+                self._target_file_germany_ant,
+            )[self.ant_sector_key]
+            target_germany_co = self.open_and_prepare(
+                self._target_file_germany_co,
+            )[self.co_sector_key]
 
             bio_emissions = (
-                xr.concat(
-                    [
-                        target_city_bio.assign_coords(
-                            subsector=target_city_bio.group.values
-                        ),
-                        target_germany_bio.assign_coords(
-                            subsector=target_germany_bio.group.values
-                        ),
-                    ],
-                    dim="subsector",
-                )
-                .expand_dims(sector=[self.BIO_SECTOR_KEY])
+                self._combine_subsectors(target_city_bio, target_germany_bio)
+                .expand_dims(sector=[self.bio_sector_key])
                 .sortby("subsector")
             )
-
             anth_emissions = (
-                xr.concat(
-                    [
-                        target_city_ant.assign_coords(
-                            subsector=target_city_ant.group.values
-                        ),
-                        target_germany_ant.assign_coords(
-                            subsector=target_germany_ant.group.values
-                        ),
-                    ],
-                    dim="subsector",
-                )
-                .expand_dims(sector=[self.ANTH_SECTOR_KEY])
+                self._combine_subsectors(target_city_ant, target_germany_ant)
+                .expand_dims(sector=[self.ant_sector_key])
                 .sortby("subsector")
             )
-
             co_emissions = (
-                xr.concat(
-                    [
-                        target_city_co.assign_coords(
-                            subsector=target_city_co.group.values
-                        ),
-                        target_germany_co.assign_coords(
-                            subsector=target_germany_co.group.values
-                        ),
-                    ],
-                    dim="subsector",
-                )
-                .expand_dims(sector=[self.CO_SECTOR_KEY])
+                self._combine_subsectors(target_city_co, target_germany_co)
+                .expand_dims(sector=[self.co_sector_key])
                 .sortby("subsector")
             )
 
             self._target = (
                 xr.concat([bio_emissions, anth_emissions, co_emissions], dim="sector")
-                .stack(state=self.STATE_DIMS)
                 .sortby("sector")
                 .sortby("subsector")
-                .astype(np.float32)
+                .stack(state=self.STATE_DIMS)
+                .astype(FLOAT_PRECISION)
                 .compute()
             )
         return self._target

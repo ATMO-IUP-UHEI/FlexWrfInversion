@@ -56,8 +56,8 @@ class Test_TargetAsError:
         assert len(prior_std.dims) == 1
         assert (prior_std >= 0).all()
         assert np.allclose(
-            prior_std,
-            np.abs(target_as_error.prior_loader.target_loader.target),
+            prior_std - np.abs(target_as_error.prior_loader.target_loader.target),
+            0,
         )
 
     def test_prior_std_with_minimum(self, target_as_error_with_minimum):
@@ -70,8 +70,8 @@ class Test_TargetAsError:
             prior_std.where(
                 prior_std > target_as_error_with_minimum._minimum_error,
                 drop=True,
-            ),
-            np.abs(
+            )
+            - np.abs(
                 target_as_error_with_minimum.prior_loader.target_loader.target  # noqa
             ).where(
                 np.abs(
@@ -80,6 +80,7 @@ class Test_TargetAsError:
                 > target_as_error_with_minimum._minimum_error,
                 drop=True,
             ),
+            0,
         )
 
     def test_load_timeframe(self, target_as_error):

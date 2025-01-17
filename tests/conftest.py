@@ -2,6 +2,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import yaml
 
 from flexwrfinversion.loaders.footprint import (
     FlexibleFootprintLoaderAnthBio,
@@ -31,8 +32,16 @@ from flexwrfinversion.loaders.target import (
     FlexibleTargetLoaderTotal,
 )
 
-EXAMPLE_DIRECTORY_0 = Path(__file__).parent.parent / "data" / "example_directory_0"
-EXAMPLE_DIRECTORY_1 = Path(__file__).parent.parent / "data" / "example_directory_1"
+EXAMPLE_DIRECTORY_0 = Path(__file__).parent / "data" / "example_directory_0"
+EXAMPLE_DIRECTORY_1 = Path(__file__).parent / "data" / "example_directory_1"
+EXAMPLE_CONFIG_DIR = Path(__file__).parent / "configs"
+
+
+@pytest.fixture
+def example_config5():
+    with (EXAMPLE_CONFIG_DIR / "example_config5.yaml").open("r") as f:
+        config = yaml.safe_load(f)
+    return config
 
 
 # %% TARGET LOADER FIXTURES
