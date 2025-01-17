@@ -164,4 +164,12 @@ cython_debug/
 *.ipynb
 .vscode/
 output/
-tests/configs/test.yaml
+# all files in tests/config/ except example_config*
+tests/configs/*
+!tests/configs/example_config1.yaml
+!tests/configs/example_config2.yaml
+!tests/configs/example_config3.yaml
+!tests/configs/example_config4.yaml
+!tests/configs/example_config5.yaml
+*temp/
+

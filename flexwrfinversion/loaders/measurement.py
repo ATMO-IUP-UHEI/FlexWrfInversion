@@ -2,15 +2,19 @@
      inversion."""
 
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 import numpy as np
 import xarray as xr
 
 from flexwrfinversion.loaders.footprint import (
+    FlexibleFootprintLoaderAnthBioCo,
+    FlexibleFootprintLoaderTotal,
     FootprintLoader,
-    LoadFootprintForTotalInCity,
 )
-from flexwrfinversion.loaders.target import TargetLoader, TargetLoaderTotalInCity
+from flexwrfinversion.loaders.target import FlexibleTargetLoaderTotal, TargetLoader
+
+FLOAT_PRECISION = np.float32
 
 
 class MeasurementLoader(ABC):
@@ -22,7 +26,8 @@ class MeasurementLoader(ABC):
         *args,
         **kwargs,
     ):
-        pass
+        self.target_loader = target_loader
+        self.footprint_loader = footprint_loader
 
     @property
     @abstractmethod
@@ -38,88 +43,284 @@ class MeasurementLoader(ABC):
     def load_timeframe(
         self, start_time: np.datetime64, end_time: np.datetime64
     ) -> xr.DataArray:
-        """Load the prior data
+        """Load part of the measurements with respect measurement time.
+
+        Args:
+            start_time (np.datetime64): Start time of the measurement timeframe
+            end_time (np.datetime64): End time of the measurement timeframe
+
         Returns:
-            xr.DataArray: The prior data as 1D array. Coordinates should be stacked
-                beforehand.
+            xr.DataArray: Measurements of given timeframe.
         """
         pass
 
+    @staticmethod
+    def _select_measurements(
+        measurements: xr.DataArray,
+        leave_out: list[str] = None,
+        keep_only: list[str] = None,
+        times_of_day: list[int] = None,
+    ):
+        """Select measurements from the measurements
 
-class MeasurementFromFile(MeasurementLoader):
+        Args:
+            measurements (xr.DataArray): measurements to select measurements from
+            keep_only (list[str], optional): List of names of stations to only include
+                 these. Defaults to None.
+            leave_out (list[str], optional): List of names of stations to exclude for the
+                 runs. Defaults to None.
+            times_of_day (list[int], optional): List of hours of the day to include in the
+                 data. Defaults to None.
+
+        Returns:
+            xr.DataArray: Selected measurements
+        """
+        if leave_out is not None:
+            measurements = measurements.isel(
+                MPlace=~np.isin(measurements.MPlace.values, leave_out)
+            )
+        if keep_only is not None:
+            measurements = measurements.sel(MPlace=keep_only)
+
+        if times_of_day is not None:
+            measurements = measurements.isel(
+                MTime=measurements.MTime.dt.hour.isin(times_of_day)
+            )
+        return measurements
+
+
+class FlexibleMeasurementLoaderTotal(MeasurementLoader):
     def __init__(
         self,
-        target_loader: TargetLoaderTotalInCity,
-        footprint_loader: LoadFootprintForTotalInCity,
+        target_loader: FlexibleTargetLoaderTotal,
+        footprint_loader: FlexibleFootprintLoaderTotal,
+        measurement_file_city: str | Path,
+        measurement_file_germany: str | Path,
+        leave_out: list[str] = None,
+        keep_only: list[str] = None,
+        times_of_day: list[int] = None,
+        ppm_noise: float = None,
+        total_sector_key: str = "CO2_TOTAL",
     ):
-        if not isinstance(target_loader, TargetLoaderTotalInCity):
-            raise ValueError("target must be an instance of TargetLoaderTotalInCity")
+        """Flexible implementation of measurement loader to load the total CO2
+        measurements directly from files.
 
-        self.target_loader = target_loader
-        self.footprint_loader = footprint_loader
-        self._remapped_data_path = target_loader._remapped_data_path
-        self._season = target_loader._season
-        self._city = target_loader._city
-        self._prior_type = target_loader._prior_type
-        self._city_suffixes = target_loader._city_suffixes
-        self._germany_suffixes = target_loader._germany_suffixes
+        Args:
+            target_loader (FlexibleTargetLoaderTotal): Target loader used in the
+                 inversion.
+            footprint_loader (FlexibleFootprintLoaderTotal): Footprint loader used in the
+                 inversion.
+            measurement_file_city (str | Path): Measurement/concentration file for the
+                 city that contains the `CO2_TOTAL` field.
+            measurement_file_germany (str | Path): Measurement/concentration file for
+                 germany that contains the `CO2_TOTAL` field.
+            leave_out (list[str], optional): List of names of stations to exclude for the
+                 runs. Defaults to None.
+            keep_only (list[str], optional): List of names of station to only include
+                 these. Defaults to None.
+            times_of_day (list[int], optional): List of times of day to include in the
+                 measurements. Defaults to None.
+            ppm_noise (bool, optional): Standard deviation of noise to add in ppm.
+                 Defaults to None.
+            total_sector_key (str, optional): Key for the total emission in the
+                    measurement files. Defaults to "CO2_TOTAL".
+        """
+        super().__init__(target_loader, footprint_loader)
+        self._measurement_file_city = measurement_file_city
+        self._measurement_file_germany = measurement_file_germany
+        if leave_out is not None and keep_only is not None:
+            raise ValueError("leave_out and keep_only cannot be used together.")
+        elif leave_out is not None:
+            leave_out = np.char.encode(np.array(leave_out, dtype=str))
+        elif keep_only is not None:
+            keep_only = np.char.encode(np.array(keep_only, dtype=str))
+        self._leave_out = leave_out
+        self._keep_only = keep_only
+        self._times_of_day = times_of_day
+        self._ppm_noise = ppm_noise
+        self.total_sector_key = total_sector_key
         self._measurements = None
+        self._unstacked_measurements = None
 
     @property
     def measurements(self):
         if self._measurements is None:
-            city_folder = (
-                self._remapped_data_path / self._season / self._city / self._prior_type
+            measurements_city = xr.open_dataset(self._measurement_file_city)[
+                self.total_sector_key
+            ]
+            measurements_germany = xr.open_dataset(self._measurement_file_germany)[
+                self.total_sector_key
+            ]
+            self._measurements = measurements_city + measurements_germany
+            self._measurements = self._select_measurements(
+                self._measurements,
+                self._leave_out,
+                self._keep_only,
+                self._times_of_day,
             )
-            germany_folder = (
-                self._remapped_data_path / self._season / "germany" / self._prior_type
-            )
-            true_concentrations_city = xr.open_dataset(
-                city_folder / f"true_concentrations{self._city_suffixes[0]}.nc",
-                chunks="auto",
-            ).drop_dims(["x_stag", "y_stag"])
-            true_concentrations_germany = xr.open_dataset(
-                germany_folder / f"true_concentrations{self._germany_suffixes[0]}.nc",
-                chunks="auto",
-            ).drop_dims(["x_stag", "y_stag"])
-
-            true_concentrations_sums_city = xr.open_dataset(
-                city_folder / f"true_concentrations{self._city_suffixes[1]}.nc",
-                chunks="auto",
-            ).drop_dims(["x_stag", "y_stag"])
-            true_concentrations_sums_germany = xr.open_dataset(
-                germany_folder / f"true_concentrations{self._germany_suffixes[1]}.nc",
-                chunks="auto",
-            ).drop_dims(["x_stag", "y_stag"])
-
             self._measurements = (
-                (
-                    xr.merge(
-                        [
-                            true_concentrations_city,
-                            true_concentrations_sums_city,
-                        ],
-                    )
-                    + xr.merge(
-                        [
-                            true_concentrations_germany,
-                            true_concentrations_sums_germany,
-                        ],
-                    )
-                )[self.target_loader.TOTAL_EMISSION_KEY]
-                .stack(measurement=self.footprint_loader.MEASUREMENT_DIMS)
-                .astype(np.float32)
+                self._measurements.stack(
+                    measurement=self.footprint_loader.MEASUREMENT_DIMS
+                )
+                .astype(FLOAT_PRECISION)
                 .compute()
             )
+
         return self._measurements
+
+    @property
+    def unstacked_measurements(self) -> xr.DataArray:
+        """Measurements in original shape.
+
+        Returns:
+            xr.DataArray: Measurements.
+        """
+        if self._unstacked_measurements is None:
+            self._unstacked_measurements = self.measurements.unstack()
+        return self._unstacked_measurements
 
     def load_timeframe(
         self, start_time: np.datetime64, end_time: np.datetime64
     ) -> xr.DataArray:
+        time_frame_measurements = self.unstacked_measurements.sel(
+            MTime=slice(start_time, end_time)
+        ).stack(measurement=self.footprint_loader.MEASUREMENT_DIMS)
+        if self._ppm_noise is not None:
+            time_frame_measurements = time_frame_measurements + np.random.normal(
+                scale=self._ppm_noise * 1e-6, size=time_frame_measurements.shape
+            )
+        return time_frame_measurements
+
+
+class FlexibleMeasurementLoaderTotalCo(MeasurementLoader):
+    total_sector_key = "CO2_TOTAL"
+
+    def __init__(
+        self,
+        target_loader: TargetLoader,
+        footprint_loader: FlexibleFootprintLoaderAnthBioCo,
+        measurement_file_city_co2: str | Path,  # THIS IS THE LAST THING THAT I ADDED
+        measurement_file_city_co: str | Path,
+        measurement_file_germany_co2: str | Path,
+        measurement_file_germany_co: str | Path,
+        leave_out: list[str] = None,
+        keep_only: list[str] = None,
+        times_of_day: list[int] = None,
+        ppm_noise: float = None,
+        ppb_noise: float = None,
+        total_sector_key: str = "CO2_TOTAL",
+        co_sector_key: str = "E_CO",
+    ):
+        """Flexible implementation of measurement loader to load the total CO2
+        measurements directly from files.
+
+        Args:
+            target_loader (FlexibleTargetLoaderTotal): Target loader used in the
+                 inversion.
+            footprint_loader (FlexibleFootprintLoaderAnthBioCo): Footprint loader used in
+                 the inversion.
+            measurement_file_city (str | Path): Measurement/concentration file for the
+                 city that contains the `CO2_TOTAL` and `E_CO` field.
+            measurement_file_germany (str | Path): Measurement/concentration file for
+                 germany that contains the `CO2_TOTAL` and `E_CO` field.
+            leave_out (list[str], optional): List of names of stations to exclude for the
+                 runs. Defaults to None.
+            keep_only (list[str], optional): List of names of station to only include
+                 these. Defaults to None.
+            times_of_day (list[int], optional): List of times of day to include in the
+                 measurements. Defaults to None.
+            ppm_noise (bool, optional): Standard deviation of noise to add in ppm for CO2.
+                 Defaults to None.
+            ppb_noise (bool, optional): Standard deviation of noise to add in ppb for CO.
+                 Defaults to None.
+            total_sector_key (str, optional): Key for the total emission in the
+                 measurement files. Defaults to "CO2_TOTAL".
+            co_sector_key (str, optional): Key for the CO emission in the
+                 measurement files. Defaults to "E_CO".
+        """
+        super().__init__(target_loader, footprint_loader)
+        self._measurement_file_city_co2 = measurement_file_city_co2
+        self._measurement_file_city_co = measurement_file_city_co
+        self._measurement_file_germany_co2 = measurement_file_germany_co2
+        self._measurement_file_germany_co = measurement_file_germany_co
+        if leave_out is not None and keep_only is not None:
+            raise ValueError("leave_out and keep_only cannot be used together.")
+        elif leave_out is not None:
+            leave_out = np.char.encode(np.array(leave_out, dtype=str))
+        elif keep_only is not None:
+            keep_only = np.char.encode(np.array(keep_only, dtype=str))
+        self._leave_out = leave_out
+        self._keep_only = keep_only
+        self._times_of_day = times_of_day
+        self._ppm_noise = ppm_noise
+        self._ppb_noise = ppb_noise
+        self.total_sector_key = total_sector_key
+        self.co_sector_key = co_sector_key
+        self._measurements = None
+        self._unstacked_measurements = None
+
+    @property
+    def measurements(self):
         if self._measurements is None:
-            self.measurements
-        return (
-            self._measurements.unstack()
-            .sel(MTime=slice(start_time, end_time))
-            .stack(measurement=self.footprint_loader.MEASUREMENT_DIMS)
-        )
+            co2_measurements = (
+                xr.open_dataset(self._measurement_file_city_co2)[self.total_sector_key]
+                + xr.open_dataset(self._measurement_file_germany_co2)[
+                    self.total_sector_key
+                ]
+            ).expand_dims(species=["CO2"])
+
+            co_measurements = (
+                xr.open_dataset(self._measurement_file_city_co)[self.co_sector_key]
+                + xr.open_dataset(self._measurement_file_germany_co)[self.co_sector_key]
+            ).expand_dims(species=["CO"])
+
+            measurements = xr.concat(
+                [
+                    co2_measurements,
+                    co_measurements,
+                ],
+                dim="species",
+            )
+
+            self._measurements = self._select_measurements(
+                measurements,
+                self._leave_out,
+                self._keep_only,
+                self._times_of_day,
+            )
+
+            self._measurements = (
+                self._measurements.sortby("species")
+                .stack(measurement=self.footprint_loader.MEASUREMENT_DIMS)
+                .astype(FLOAT_PRECISION)
+                .compute()
+            )
+
+        return self._measurements
+
+    @property
+    def unstacked_measurements(self) -> xr.DataArray:
+        """Measurements in original shape.
+
+        Returns:
+            xr.DataArray: Measurements.
+        """
+        if self._unstacked_measurements is None:
+            self._unstacked_measurements = self.measurements.unstack()
+        return self._unstacked_measurements
+
+    def load_timeframe(
+        self, start_time: np.datetime64, end_time: np.datetime64
+    ) -> xr.DataArray:
+        time_frame_measurements = self.unstacked_measurements.sel(
+            MTime=slice(start_time, end_time)
+        ).stack(measurement=self.footprint_loader.MEASUREMENT_DIMS)
+        if self._ppm_noise is not None or self._ppb_noise is not None:
+            noise = xr.zeros_like(time_frame_measurements)
+            ppm_noise = self._ppm_noise * 1e-6 if self._ppm_noise is not None else 0
+            ppb_noise = self._ppb_noise * 1e-9 if self._ppb_noise is not None else 0
+            noise = xr.where(noise.species == "CO2", ppm_noise, ppb_noise)
+            time_frame_measurements = time_frame_measurements + np.random.normal(
+                scale=noise, size=time_frame_measurements.shape
+            )
+        return time_frame_measurements
