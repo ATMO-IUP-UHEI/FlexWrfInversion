@@ -927,13 +927,13 @@ files = [
 
 [[package]]
 name = "sparse"
-version = "0.15.4"
+version = "0.15.5"
 description = "Sparse n-dimensional arrays for the PyData ecosystem"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "sparse-0.15.4-py2.py3-none-any.whl", hash = "sha256:76ec76fee2aee82a84eb97155dd530a9644e3b1fdea2406bc4b454698b36d938"},
-    {file = "sparse-0.15.4.tar.gz", hash = "sha256:d4b1c57d24ff0f64f2fd5b5a95b49b7fb84ed207a26d7d58ce2764dcc5c72b84"},
+    {file = "sparse-0.15.5-py2.py3-none-any.whl", hash = "sha256:cf608731f8564916443427bca323fe118e8c25a712ddf02dbe7673a961139706"},
+    {file = "sparse-0.15.5.tar.gz", hash = "sha256:4c76ce0c96f5cd5c31b7e79e650f0022424c2b16f05f10049e9c6381ee4be266"},
 ]
 
 [package.dependencies]
@@ -943,7 +943,7 @@ scipy = ">=0.19"
 
 [package.extras]
 all = ["matrepr", "sparse[docs,tox]"]
-docs = ["sphinx", "sphinx-rtd-theme"]
+docs = ["sphinx", "sphinx_rtd_theme"]
 tests = ["dask[array]", "pre-commit", "pytest (>=3.5)", "pytest-cov"]
 tox = ["sparse[tests]", "tox"]
 
@@ -1040,13 +1040,13 @@ zstd = ["zstandard (>=0.18.0)"]
 
 [[package]]
 name = "virtualenv"
-version = "20.28.1"
+version = "20.29.0"
 description = "Virtual Python Environment builder"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "virtualenv-20.28.1-py3-none-any.whl", hash = "sha256:412773c85d4dab0409b83ec36f7a6499e72eaf08c80e81e9576bca61831c71cb"},
-    {file = "virtualenv-20.28.1.tar.gz", hash = "sha256:5d34ab240fdb5d21549b76f9e8ff3af28252f5499fb6d6f031adac4e5a8c5329"},
+    {file = "virtualenv-20.29.0-py3-none-any.whl", hash = "sha256:c12311863497992dc4b8644f8ea82d3b35bb7ef8ee82e6630d76d0197c39baf9"},
+    {file = "virtualenv-20.29.0.tar.gz", hash = "sha256:6345e1ff19d4b1296954cee076baaf58ff2a12a84a338c62b02eda39f20aa982"},
 ]
 
 [package.dependencies]
