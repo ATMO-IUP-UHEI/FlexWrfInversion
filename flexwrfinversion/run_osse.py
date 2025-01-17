@@ -416,7 +416,16 @@ def _run_inversion(
     return inversion_result
 
 
-def _prepare_permutations(config, measurement_loader):
+def _prepare_permutations(config: dict, measurement_loader: MeasurementLoader) -> list:
+    """Sets up stations to use for the permutations.
+
+    Args:
+        config (dict): Config file with n_stations, n_permutations, and permutation_seed.
+        measurement_loader (MeasurementLoader): Measurement loader instance.
+
+    Returns:
+        list: List of np.arrays of stations to use for the permutations.
+    """
     if "permutation_seed" in config:
         global_state = np.random.get_state()
         np.random.seed(config["permutation_seed"])
