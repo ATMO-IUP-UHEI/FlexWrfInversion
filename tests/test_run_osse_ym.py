@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -6,12 +8,12 @@ from flexwrfinversion.run_osse_ym import (
     _initialize_loaders,
     _load_inversion_data,
     _restack_coords,
-    _run_inversion_ym,
+    _run_inversion_ym_with_globals,
     _setup_restacking,
 )
 
 
-def test_run_inversion_ym():
+def test_run_inversion_ym_with_globals(tmp_path):
     # Create synthetic data
     mplace = np.char.encode(np.array(["site1", "site2", "site3"]))
     mtime = pd.date_range("2020-01-01", periods=10, freq="h").to_numpy()
@@ -53,19 +55,22 @@ def test_run_inversion_ym():
     target_emissions = xr.DataArray(
         np.random.randn(12, 5), coords={"Time": time, "subsector": subsectors}
     )
+    with patch.multiple(
+        "flexwrfinversion.run_osse_ym",
+        prior_emissions=prior_emissions.astype(np.float32),
+        prior_standard_deviation=prior_standard_deviation.astype(np.float32),
+        prior_temporal_correlation=prior_temporal_correlation.astype(np.float32),
+        prior_spatial_correlation=prior_spatial_correlation.astype(np.float32),
+        footprints=footprints.astype(np.float32),
+        measurements=measurements.astype(np.float32),
+        measurement_covariance=measurement_covariance.astype(np.float32),
+        target_emissions=target_emissions.astype(np.float32),
+        mplace_value_permutations=[sites],
+        output_buffer_path=tmp_path,
+    ):
+        _ = _run_inversion_ym_with_globals(0)
 
-    result = _run_inversion_ym(
-        sites,
-        prior_emissions.astype(np.float32),
-        prior_standard_deviation.astype(np.float32),
-        prior_temporal_correlation.astype(np.float32),
-        prior_spatial_correlation.astype(np.float32),
-        footprints.astype(np.float32),
-        measurements.astype(np.float32),
-        measurement_covariance.astype(np.float32),
-        target_emissions.astype(np.float32),
-    )
-
+    result = xr.load_dataset(tmp_path / "permutation_0.nc")
     assert isinstance(result, xr.Dataset)
     assert "posterior_emissions" in result
     assert "posterior_std" in result
@@ -74,16 +79,16 @@ def test_run_inversion_ym():
     posterior_std = result.posterior_std
 
     assert (
-        set(posterior_emissions.dims)
+        set(posterior_emissions.dims) - {"permutation"}
         == set(prior_emissions.dims)
         == {"Time", "subsector"}
     )
     assert (
-        set(posterior_std.dims)
+        set(posterior_std.dims) - {"permutation"}
         == set(prior_standard_deviation.dims)
         == {"Time", "subsector"}
     )
-    for dim in result.posterior_emissions.dims:
+    for dim in prior_emissions.dims:
         assert (result.posterior_emissions[dim] == prior_emissions[dim]).all()
         assert (result.posterior_std[dim] == prior_standard_deviation[dim]).all()
 
@@ -111,7 +116,7 @@ def test_setup_restacking_with_dims_to_stack():
     class DummyPriorLoader:
         prior = xr.DataArray(
             np.random.randn(10, 5, 3), dims=["Time", "subsector", "sector"]
-        )
+        ).stack(state=["Time", "subsector", "sector"])
 
     (
         dims_to_stack,
@@ -166,7 +171,12 @@ def test_load_inversion_data(example_config5):
     assert prior_standard_deviation.dtype == np.float32
     assert set(prior_temporal_correlation.dims) == {"Time0", "Time1"}
     assert prior_temporal_correlation.dtype == np.float32
-    assert set(prior_spatial_correlation.dims) == {"subsector0", "subsector1"}
+    assert set(prior_spatial_correlation.dims) == {
+        "subsector0",
+        "sector0",
+        "subsector1",
+        "sector1",
+    }
     assert prior_spatial_correlation.dtype == np.float32
     assert set(footprints.dims) == {"measurement", "state"}
     assert footprints.dtype == np.float32
