@@ -32,10 +32,8 @@ output_name: ''                 # Name of the output file
 ```
 """
 
-import time
 from argparse import ArgumentParser
 from pathlib import Path
-from typing import Literal
 
 import numpy as np
 import xarray as xr
@@ -449,6 +447,16 @@ def main(args):
     # load config yaml
     with args.config.open("r") as f:
         config = yaml.safe_load(f)
+
+    # raise a UserWarning if n_processes is set in the config
+    if "n_processes" in config:
+        logger.warning(
+            "The n_processes parameter is not supported in this version of the OSSE."
+        )
+
+    # if output_name does not end with .nc raise a warning
+    if not config["output_name"].endswith(".nc"):
+        raise ValueError("output_name must end with .nc")
 
     # build paths for the inversion and setup directories
     output_dir = Path(config["output_dir"])

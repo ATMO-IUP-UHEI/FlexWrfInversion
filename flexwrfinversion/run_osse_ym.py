@@ -32,6 +32,7 @@ output_name: ''                 # Name of the output file
 ```
 """
 
+from multiprocessing import Pool
 from pathlib import Path
 
 import numpy as np
@@ -59,35 +60,44 @@ from flexwrfinversion.run_osse import (
 
 FLOAT_PRECISION = np.float32
 
+mplace_value_permutations = None
+prior_emissions = None
+prior_standard_deviation = None
+prior_temporal_correlation = None
+prior_spatial_correlation = None
+footprints = None
+measurements = None
+measurement_covariance = None
+target_emissions = None
+output_buffer_path = None
 
-def _run_inversion_ym(
-    sites: np.ndarray,
-    prior_emissions: xr.DataArray,
-    prior_standard_deviation: xr.DataArray,
-    prior_temporal_correlation: xr.DataArray,
-    prior_spatial_correlation: xr.DataArray,
-    footprints: xr.DataArray,
-    measurements: xr.DataArray,
-    measurement_covariance: xr.DataArray,
-    target_emissions: xr.DataArray,
+
+def _run_inversion_ym_with_globals(
+    i,
 ) -> xr.Dataset:
     """
     Runs the inversion using the given data.
 
     Args:
-        sites (np.ndarray): Sites to run the inversion for.
-        prior_emissions (xr.DataArray): Prior emissions.
-        prior_standard_deviation (xr.DataArray): Prior standard deviation.
-        prior_temporal_correlation (xr.DataArray): Prior temporal correlation.
-        prior_spatial_correlation (xr.DataArray): Prior spatial correlation.
-        footprints (xr.DataArray): Footprints.
-        measurements (xr.DataArray): Measurements.
-        measurement_covariance (xr.DataArray): Measurement covariance.
-        target_emissions (xr.DataArray): Target emissions.
+        i (int): Index of the permutation.
 
     Returns:
         xr.Dataset: Inversion result.
     """
+
+    global mplace_value_permutations
+    global prior_emissions
+    global prior_standard_deviation
+    global prior_temporal_correlation
+    global prior_spatial_correlation
+    global footprints
+    global measurements
+    global measurement_covariance
+    global target_emissions
+    global output_buffer_path
+    logger.info(f"Running permutation {i}")
+    sites = mplace_value_permutations[i]
+
     site_selection = measurements.unstack().MPlace.isin(sites)
     measurements, measurement_covariance, footprints = _select_sites(
         measurements, measurement_covariance, footprints, sites
@@ -120,8 +130,8 @@ def _run_inversion_ym(
             posterior_std.rename("posterior_std"),
             site_selection.rename("site_selection"),
         ]
-    )
-    return inversion_result
+    ).expand_dims(permutation=[i])
+    inversion_result.to_netcdf(output_buffer_path / f"permutation_{i}.nc")
 
 
 def _setup_restacking(
@@ -143,7 +153,7 @@ def _setup_restacking(
     footprint_order = ["measurement", "Time", "subsector"]
     prior_spatial_correlation_order = ["subsector0", "subsector1"]
     prior_spatial_correlation_dims_to_stack = dict()
-    if "sector" in prior_loader.prior.dims:
+    if "sector" in prior_loader.prior.unstack().dims:
         dims_to_stack["subsector_sector"] = ["subsector", "sector"]
         state_order = ["Time", "subsector_sector"]
         footprint_order = ["measurement", "Time", "subsector_sector"]
@@ -194,6 +204,11 @@ def _load_inversion_data(
     prior_spatial_correlation = prior_covariance_loader.spatial_correlation.astype(
         FLOAT_PRECISION
     )
+    if "sector" in prior_loader.prior.unstack().dims:
+        prior_spatial_correlation = (
+            prior_spatial_correlation
+            * prior_covariance_loader.sector_correlation.astype(FLOAT_PRECISION)
+        )
     footprints = footprint_loader.footprint.astype(FLOAT_PRECISION)
     target_emissions = target_loader.target.astype(FLOAT_PRECISION)
     measurements = measurement_loader.measurements.astype(FLOAT_PRECISION).copy()
@@ -243,10 +258,22 @@ def _restack_coords(
 
 
 def main(args):
+    global mplace_value_permutations
+    global prior_emissions
+    global prior_standard_deviation
+    global prior_temporal_correlation
+    global prior_spatial_correlation
+    global footprints
+    global measurements
+    global measurement_covariance
+    global target_emissions
+    global output_buffer_path
     # load config yaml
     with args.config.open("r") as f:
         config = yaml.safe_load(f)
-
+    n_processes = 1
+    if "n_processes" in config:
+        n_processes = config["n_processes"]
     # build paths for the inversion and setup directories
     output_dir = Path(config["output_dir"])
     output_name = config["output_name"]
@@ -314,42 +341,37 @@ def main(args):
         prior_spatial_correlation_dims_to_stack,
         prior_spatial_correlation_order,
     )
-    # Start osses
-    for i, mplace_values in tqdm(
-        enumerate(mplace_value_permutations), total=len(mplace_value_permutations)
-    ):
-        if "start_index" in config:
-            if i < config["start_index"]:
-                continue
+    client.close()
 
-        inversion_result = _run_inversion_ym(
-            mplace_values,
-            prior_emissions,
-            prior_standard_deviation,
-            prior_temporal_correlation,
-            prior_spatial_correlation,
-            footprints,
-            measurements,
-            measurement_covariance,
-            target_emissions,
-        )
-        inversion_result.to_netcdf(output_buffer_path / f"permutation_{i}.nc")
+    with Pool(n_processes) as pool:
+        # start  processes with tqdm
+        with tqdm(total=len(mplace_value_permutations), smoothing=0) as pbar:
+            for _ in pool.imap_unordered(
+                _run_inversion_ym_with_globals, range(len(mplace_value_permutations))
+            ):
+                pbar.update()
 
-    client.restart(wait_for_workers=True)
-
-    # Combine all permutations and save the result
-    xr.open_mfdataset(
-        output_buffer_path.glob("permutation_*.nc"),
-        combine="nested",
-        concat_dim="permutation",
-    ).to_netcdf(output_dir / output_name)
+    permutation_files = list(output_buffer_path.glob("permutation_*.nc"))
+    permutation_files.sort()
+    output_file = output_dir / output_name
+    logger.info("Saving output")
+    for i, file in tqdm(enumerate(permutation_files), total=len(permutation_files)):
+        ds = xr.load_dataset(file).chunk({"permutation": 1})
+        if i == 0:
+            ds.to_zarr(output_file, mode="w", zarr_format=2)
+        else:
+            ds.to_zarr(
+                output_file,
+                mode="a",
+                zarr_format=2,
+                append_dim="permutation",
+            )
 
     # Delete the buffer files
     for file in output_buffer_path.glob("permutation_*.nc"):
         file.unlink()
 
     output_buffer_path.rmdir()
-    client.close()
 
 
 if __name__ == "__main__":
