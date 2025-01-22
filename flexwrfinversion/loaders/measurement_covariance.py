@@ -63,24 +63,64 @@ class ConstantNoCorrelation(MeasurementCovarianceLoader):
         super().__init__(measurement_loader)
         self._ppm_error = ppm_error
 
-    def load_timeframe(
-        self, start_time: np.datetime64, end_time: np.datetime64
-    ) -> xr.DataArray:
-        measurement_subset = (
+    def _get_measurement_subset(self, start_time, end_time):
+        return (
             self.measurement_loader.measurements.unstack()
             .sel(MTime=slice(start_time, end_time))
             .stack(
                 measurement=self.measurement_loader.footprint_loader.MEASUREMENT_DIMS
             )
         )
+
+    def _set_constant_std(self, measurement_subset):
         std = xr.DataArray(
-            np.ones_like(measurement_subset, dtype=measurement_subset.dtype)
-            * self._ppm_error
-            * 1e-6,
+            np.ones_like(measurement_subset, dtype=measurement_subset.dtype),
             coords=measurement_subset.coords,
         )
+        std *= self._ppm_error * 1e-6
+        return std
+
+    def load_timeframe(
+        self, start_time: np.datetime64, end_time: np.datetime64
+    ) -> xr.DataArray:
+        measurement_subset = self._get_measurement_subset(start_time, end_time)
+        std = self._set_constant_std(measurement_subset)
         return (
             (xr.zeros_like(self._to_two_dimensions(std)) + np.diag(std.data**2))
+            .astype(FLOAT_PRECISION)
+            .compute()
+        )
+
+
+class ConstantPlusRelativeNoCorrelation(ConstantNoCorrelation):
+    def __init__(
+        self,
+        measurement_loader: MeasurementLoader,
+        ppm_error: float,
+        relative_error: float,
+    ):
+        """Covariance loader for measurements with constant standard deviation and no
+        correlation.
+
+        Args:
+            measurement_loader (MeasurementLoader): Measurement loader used in
+                 inversion.
+            ppm_error (float): Error to apply to each measurment in ppm.
+            relative_error (float): Relative error to apply to each measurment.
+        """
+        super().__init__(measurement_loader, ppm_error)
+        self._relative_error = relative_error
+
+    def load_timeframe(self, start_time, end_time):
+        measurement_subset = self._get_measurement_subset(start_time, end_time)
+        std_const = self._set_constant_std(measurement_subset)
+        std_rel = self._relative_error * np.abs(measurement_subset)
+        return (
+            (
+                xr.zeros_like(self._to_two_dimensions(std_const))
+                + np.diag(std_const.data**2)
+                + np.diag(std_rel.data**2)
+            )
             .astype(FLOAT_PRECISION)
             .compute()
         )

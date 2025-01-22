@@ -99,9 +99,11 @@ def _run_inversion_ym_with_globals(
     sites = mplace_value_permutations[i]
 
     site_selection = measurements.unstack().MPlace.isin(sites)
-    measurements, measurement_covariance, footprints = _select_sites(
-        measurements, measurement_covariance, footprints, sites
-    )
+    (
+        measurements_subset,
+        measurement_covariance_subset,
+        footprints_subset,
+    ) = _select_sites(measurements, measurement_covariance, footprints, sites)
     state_coordinates = prior_emissions.coords
     solver = _compute_inversion(
         loss_class=BayesianYM,
@@ -110,16 +112,16 @@ def _run_inversion_ym_with_globals(
         prior_standard_deviation=prior_standard_deviation.values,
         prior_temporal_correlation=prior_temporal_correlation.values,
         prior_spatial_correlation=prior_spatial_correlation.values,
-        forward_model=footprints.data,
-        measurement=measurements.values,
-        measurement_covariance=measurement_covariance.values,
+        forward_model=footprints_subset.data,
+        measurement=measurements_subset.values,
+        measurement_covariance=measurement_covariance_subset.values,
     )
-    posterior_emissions, prior_standard_deviations = solver()
+    posterior_emissions, posterior_standard_deviations = solver()
     posterior_emissions = xr.DataArray(
         posterior_emissions, coords=state_coordinates
     ).unstack()
     posterior_std = xr.DataArray(
-        prior_standard_deviations, coords=state_coordinates
+        posterior_standard_deviations, coords=state_coordinates
     ).unstack()
     inversion_result = xr.merge(
         [
