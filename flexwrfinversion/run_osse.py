@@ -59,6 +59,7 @@ from flexwrfinversion.loaders.measurement import (
 from flexwrfinversion.loaders.measurement_covariance import (
     ConstantNoCorrelation,
     ConstantNoCorrelationCO,
+    ConstantPlusRelativeNoCorrelation,
     MeasurementCovarianceLoader,
 )
 from flexwrfinversion.loaders.prior import (
