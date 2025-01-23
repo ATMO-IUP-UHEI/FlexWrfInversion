@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from flexwrfinversion.loaders.measurement_bias import ConstantBias
+from flexwrfinversion.loaders.measurement_covariance import ConstantNoCorrelation
 from flexwrfinversion.run_osse_ym import (
     _initialize_loaders,
     _load_inversion_data,
@@ -13,7 +15,10 @@ from flexwrfinversion.run_osse_ym import (
 )
 
 
-def test_run_inversion_ym_with_globals(tmp_path):
+def test_run_inversion_ym_with_globals(tmp_path, flexible_measurement_loader_total):
+    measurement_covariance_loader = ConstantNoCorrelation(
+        flexible_measurement_loader_total, ppm_error=2
+    )
     # Create synthetic data
     mplace = np.char.encode(np.array(["site1", "site2", "site3"]))
     mtime = pd.date_range("2020-01-01", periods=10, freq="h").to_numpy()
@@ -55,42 +60,56 @@ def test_run_inversion_ym_with_globals(tmp_path):
     target_emissions = xr.DataArray(
         np.random.randn(12, 5), coords={"Time": time, "subsector": subsectors}
     )
-    with patch.multiple(
-        "flexwrfinversion.run_osse_ym",
-        prior_emissions=prior_emissions.astype(np.float32),
-        prior_standard_deviation=prior_standard_deviation.astype(np.float32),
-        prior_temporal_correlation=prior_temporal_correlation.astype(np.float32),
-        prior_spatial_correlation=prior_spatial_correlation.astype(np.float32),
-        footprints=footprints.astype(np.float32),
-        measurements=measurements.astype(np.float32),
-        measurement_covariance=measurement_covariance.astype(np.float32),
-        target_emissions=target_emissions.astype(np.float32),
-        mplace_value_permutations=[sites],
-        output_buffer_path=tmp_path,
-    ):
-        _ = _run_inversion_ym_with_globals(0)
 
-    result = xr.load_dataset(tmp_path / "permutation_0.nc")
-    assert isinstance(result, xr.Dataset)
-    assert "posterior_emissions" in result
-    assert "posterior_std" in result
+    old_posterior = None
+    for measurement_bias_loader in [
+        None,
+        ConstantBias(
+            flexible_measurement_loader_total, measurement_covariance_loader, bias=3
+        ),
+    ]:
+        with patch.multiple(
+            "flexwrfinversion.run_osse_ym",
+            prior_emissions=prior_emissions.astype(np.float32),
+            prior_standard_deviation=prior_standard_deviation.astype(np.float32),
+            prior_temporal_correlation=prior_temporal_correlation.astype(np.float32),
+            prior_spatial_correlation=prior_spatial_correlation.astype(np.float32),
+            footprints=footprints.astype(np.float32),
+            measurements=measurements.astype(np.float32),
+            measurement_covariance=measurement_covariance.astype(np.float32),
+            target_emissions=target_emissions.astype(np.float32),
+            mplace_value_permutations=[sites],
+            output_buffer_path=tmp_path,
+            measurement_bias_loader=measurement_bias_loader,
+        ):
+            _ = _run_inversion_ym_with_globals(0)
 
-    posterior_emissions = result.posterior_emissions
-    posterior_std = result.posterior_std
+        result = xr.load_dataset(tmp_path / "permutation_0.nc")
+        assert isinstance(result, xr.Dataset)
+        assert "posterior_emissions" in result
+        assert "posterior_std" in result
 
-    assert (
-        set(posterior_emissions.dims) - {"permutation"}
-        == set(prior_emissions.dims)
-        == {"Time", "subsector"}
-    )
-    assert (
-        set(posterior_std.dims) - {"permutation"}
-        == set(prior_standard_deviation.dims)
-        == {"Time", "subsector"}
-    )
-    for dim in prior_emissions.dims:
-        assert (result.posterior_emissions[dim] == prior_emissions[dim]).all()
-        assert (result.posterior_std[dim] == prior_standard_deviation[dim]).all()
+        posterior_emissions = result.posterior_emissions
+        posterior_std = result.posterior_std
+
+        assert (
+            set(posterior_emissions.dims) - {"permutation"}
+            == set(prior_emissions.dims)
+            == {"Time", "subsector"}
+        )
+        assert (
+            set(posterior_std.dims) - {"permutation"}
+            == set(prior_standard_deviation.dims)
+            == {"Time", "subsector"}
+        )
+        for dim in prior_emissions.dims:
+            assert (result.posterior_emissions[dim] == prior_emissions[dim]).all()
+            assert (result.posterior_std[dim] == prior_standard_deviation[dim]).all()
+
+        if old_posterior is not None:
+            assert not (posterior_emissions == old_posterior).all()
+            assert not (posterior_std == old_posterior).all()
+        old_posterior = posterior_emissions
 
 
 def test_setup_restacking():
