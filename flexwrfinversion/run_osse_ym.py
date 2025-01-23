@@ -44,8 +44,15 @@ from pyinverse.loss import BayesianYM
 from pyinverse.solver import BayesianAnalyticalYM
 from tqdm.auto import tqdm
 
+# flake8: noqa: F401
 from flexwrfinversion.loaders.footprint import FootprintLoader
 from flexwrfinversion.loaders.measurement import MeasurementLoader
+from flexwrfinversion.loaders.measurement_bias import (
+    ConstantBias,
+    MeasurementBias,
+    RandomStaticBias,
+    RelativeBias,
+)
 from flexwrfinversion.loaders.measurement_covariance import MeasurementCovarianceLoader
 from flexwrfinversion.loaders.prior import PriorLoader
 from flexwrfinversion.loaders.prior_covariance import PriorCovarianceLoader
@@ -70,6 +77,24 @@ measurements = None
 measurement_covariance = None
 target_emissions = None
 output_buffer_path = None
+measurement_bias_loader = None
+
+
+def _initialize_measurement_bias_loader(
+    config: dict,
+    measurement_loader: MeasurementLoader,
+    measurement_covariance_loader: MeasurementCovarianceLoader,
+) -> MeasurementBias:
+    measurement_bias_loader = None
+    if "measurement_bias" in config:
+        measurement_bias_loader = eval(
+            config["measurement_bias"]["measurement_bias_loader"]
+        )(
+            measurement_loader=measurement_loader,
+            measurement_covariance_loader=measurement_covariance_loader,
+            **config["measurement_bias"]["kwargs"],
+        )
+    return measurement_bias_loader
 
 
 def _run_inversion_ym_with_globals(
@@ -95,6 +120,7 @@ def _run_inversion_ym_with_globals(
     global measurement_covariance
     global target_emissions
     global output_buffer_path
+    global measurement_bias_loader
     logger.info(f"Running permutation {i}")
     sites = mplace_value_permutations[i]
 
@@ -105,6 +131,14 @@ def _run_inversion_ym_with_globals(
         footprints_subset,
     ) = _select_sites(measurements, measurement_covariance, footprints, sites)
     state_coordinates = prior_emissions.coords
+
+    if measurement_bias_loader is not None:
+        measurement_bias_loader.set_bias()
+        measurements_subset = (
+            measurements_subset
+            + measurement_bias_loader.generate_bias(measurements_subset)
+        )
+
     solver = _compute_inversion(
         loss_class=BayesianYM,
         solver_class=BayesianAnalyticalYM,
@@ -270,6 +304,8 @@ def main(args):
     global measurement_covariance
     global target_emissions
     global output_buffer_path
+    global measurement_bias_loader
+
     # load config yaml
     with args.config.open("r") as f:
         config = yaml.safe_load(f)
@@ -293,7 +329,9 @@ def main(args):
         measurement_loader,
         measurement_covariance_loader,
     ) = _initialize_loaders(config)
-
+    measurement_bias_loader = _initialize_measurement_bias_loader(
+        config, measurement_loader, measurement_covariance_loader
+    )
     # select station permutations
     logger.info("Setting up permutations")
     mplace_value_permutations = _prepare_permutations(config, measurement_loader)
