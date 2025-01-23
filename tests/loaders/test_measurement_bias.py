@@ -1,7 +1,11 @@
 import numpy as np
 import pytest
 
-from flexwrfinversion.loaders.measurement_bias import ConstantBias, RandomStaticBias
+from flexwrfinversion.loaders.measurement_bias import (
+    ConstantBias,
+    RandomStaticBias,
+    RelativeBias,
+)
 from flexwrfinversion.loaders.measurement_covariance import ConstantNoCorrelation
 
 
@@ -75,3 +79,19 @@ class Test_RandomStaticBias:
         assert set(bias.unstack().dims) == set(measurements.unstack().dims)
         assert ((measurements + bias) != measurements).all()
         assert bias.max() < 1e-4
+
+
+class Test_RelativeBias:
+    def test_generate_bias(
+        self, flexible_measurement_loader_total, covariance_constant_no_correlation
+    ):
+        relative_bias = RelativeBias(
+            measurement_loader=flexible_measurement_loader_total,
+            measurement_covariance_loader=covariance_constant_no_correlation,
+            relative_bias=0.2,
+        )
+        measurements = flexible_measurement_loader_total.measurements
+        bias = relative_bias.generate_bias(measurements)
+        assert bias.shape == measurements.shape
+        assert set(bias.dims) == set(measurements.dims)
+        assert np.allclose(bias, 0.2 * measurements, atol=0)

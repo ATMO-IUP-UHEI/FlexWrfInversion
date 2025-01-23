@@ -86,3 +86,28 @@ class RandomStaticBias(MeasurementBias):
             )
         )
         return bias_selection
+
+
+class RelativeBias(MeasurementBias):
+    def __init__(
+        self,
+        measurement_loader,
+        measurement_covariance_loader,
+        relative_bias,
+    ):
+        """Bias loader for measurements with relative bias.
+
+        Args:
+            measurement_loader (MeasurementLoader): Measurement loader used in inversion.
+            measurement_covariance_loader (MeasurementCovarianceLoader): Measurement
+                covariance loader used in inversion.
+            relative_bias (float): The relative bias to apply to the measurements.
+        """
+        super().__init__(measurement_loader, measurement_covariance_loader)
+        self.relative_bias = relative_bias
+
+    def set_bias(self):
+        pass
+
+    def generate_bias(self, measurements: xr.DataArray) -> xr.DataArray:
+        return measurements * self.relative_bias
