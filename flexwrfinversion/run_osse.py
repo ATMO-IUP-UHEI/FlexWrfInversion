@@ -55,6 +55,7 @@ from flexwrfinversion.loaders.measurement import (
     FlexibleMeasurementLoaderTotal,
     FlexibleMeasurementLoaderTotalCo,
     MeasurementLoader,
+    MeasurementLoaderFromSingleFileTotal,
 )
 from flexwrfinversion.loaders.measurement_covariance import (
     ConstantNoCorrelation,
