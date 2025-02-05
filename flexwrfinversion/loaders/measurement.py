@@ -324,3 +324,100 @@ class FlexibleMeasurementLoaderTotalCo(MeasurementLoader):
                 scale=noise, size=time_frame_measurements.shape
             )
         return time_frame_measurements
+
+
+class MeasurementLoaderFromSingleFileTotal(MeasurementLoader):
+    """Just use one file to load all necessary measurements."""
+
+    def __init__(
+        self,
+        target_loader: TargetLoader,
+        footprint_loader: FootprintLoader,
+        measurement_file: str | Path,
+        leave_out: list[str] = None,
+        keep_only: list[str] = None,
+        times_of_day: list[int] = None,
+        ppm_noise: float = None,
+        total_sector_key: str = "CO2_TOTAL",
+    ):
+        """Flexible implementation of measurement loader to load the total CO2
+        measurements directly from files.
+
+        Args:
+            target_loader (FlexibleTargetLoaderTotal): Target loader used in the
+                 inversion.
+            footprint_loader (FlexibleFootprintLoaderTotal): Footprint loader used in the
+                 inversion.
+            measurement_file (str | Path): Measurement/concentration file that contains
+                 the `CO2_TOTAL` field.
+            leave_out (list[str], optional): List of names of stations to exclude for the
+                 runs. Defaults to None.
+            keep_only (list[str], optional): List of names of station to only include
+                 these. Defaults to None.
+            times_of_day (list[int], optional): List of times of day to include in the
+                 measurements. Defaults to None.
+            ppm_noise (bool, optional): Standard deviation of noise to add in ppm.
+                 Defaults to None.
+            total_sector_key (str, optional): Key for the total emission in the
+                    measurement files. Defaults to "CO2_TOTAL".
+        """
+        super().__init__(target_loader, footprint_loader)
+        self._measurement_file = measurement_file
+        if leave_out is not None and keep_only is not None:
+            raise ValueError("leave_out and keep_only cannot be used together.")
+        elif leave_out is not None:
+            leave_out = np.char.encode(np.array(leave_out, dtype=str))
+        elif keep_only is not None:
+            keep_only = np.char.encode(np.array(keep_only, dtype=str))
+        self._leave_out = leave_out
+        self._keep_only = keep_only
+        self._times_of_day = times_of_day
+        self._ppm_noise = ppm_noise
+        self.total_sector_key = total_sector_key
+        self._measurements = None
+        self._unstacked_measurements = None
+
+    @property
+    def measurements(self):
+        if self._measurements is None:
+            measurements = xr.open_dataset(self._measurement_file)[
+                self.total_sector_key
+            ]
+            self._measurements = self._select_measurements(
+                measurements,
+                self._leave_out,
+                self._keep_only,
+                self._times_of_day,
+            )
+            self._measurements = (
+                self._measurements.stack(
+                    measurement=self.footprint_loader.MEASUREMENT_DIMS
+                )
+                .astype(FLOAT_PRECISION)
+                .compute()
+            )
+
+        return self._measurements
+
+    @property
+    def unstacked_measurements(self) -> xr.DataArray:
+        """Measurements in original shape.
+
+        Returns:
+            xr.DataArray: Measurements.
+        """
+        if self._unstacked_measurements is None:
+            self._unstacked_measurements = self.measurements.unstack()
+        return self._unstacked_measurements
+
+    def load_timeframe(
+        self, start_time: np.datetime64, end_time: np.datetime64
+    ) -> xr.DataArray:
+        time_frame_measurements = self.unstacked_measurements.sel(
+            MTime=slice(start_time, end_time)
+        ).stack(measurement=self.footprint_loader.MEASUREMENT_DIMS)
+        if self._ppm_noise is not None:
+            time_frame_measurements = time_frame_measurements + np.random.normal(
+                scale=self._ppm_noise * 1e-6, size=time_frame_measurements.shape
+            )
+        return time_frame_measurements
