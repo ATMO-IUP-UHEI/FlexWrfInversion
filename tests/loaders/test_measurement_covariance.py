@@ -6,6 +6,7 @@ from flexwrfinversion.loaders.measurement_covariance import (
     ConstantNoCorrelation,
     ConstantNoCorrelationCO,
     ConstantPlusRelativeNoCorrelation,
+    FromFileNoCorrelation,
 )
 
 
@@ -140,3 +141,47 @@ class Test_ConstantNoCorrelationCO:
         )
         assert set(covariance.dims) == {"measurement0", "measurement1"}
         assert set(covariance.unstack().species0.values) == {"CO", "CO2"}
+
+
+class Test_FromFileNoCorrelation:
+    def test_std(self, tmp_path, flexible_measurement_loader_total):
+        std = (
+            np.abs(flexible_measurement_loader_total.measurements.unstack()) * 0.1
+            + 2e-6
+        )
+        std.to_netcdf(tmp_path / "measurement_std.nc")
+        measurement_covariance = FromFileNoCorrelation(
+            measurement_loader=flexible_measurement_loader_total,
+            std_file=tmp_path / "measurement_std.nc",
+        )
+        std_loaded = measurement_covariance.std
+        assert (std_loaded.unstack() == std).all()
+        assert set(std_loaded.dims) == {"measurement"}
+        assert (
+            std_loaded.measurement
+            == flexible_measurement_loader_total.measurements.measurement
+        ).all()
+
+    def test_load_timeframe(self, tmp_path, flexible_measurement_loader_total):
+        std = (
+            np.abs(flexible_measurement_loader_total.measurements.unstack()) * 0.1
+            + 2e-6
+        )
+        std.to_netcdf(tmp_path / "measurement_std.nc")
+        measurement_covariance = FromFileNoCorrelation(
+            measurement_loader=flexible_measurement_loader_total,
+            std_file=tmp_path / "measurement_std.nc",
+        )
+        start_mtime = (
+            flexible_measurement_loader_total.measurements.unstack().MTime.values[0]
+        )
+        end_mtime = (
+            flexible_measurement_loader_total.measurements.unstack().MTime.values[4]
+        )
+        covariance = measurement_covariance.load_timeframe(
+            start_time=start_mtime, end_time=end_mtime
+        )
+        assert covariance is not None
+        assert covariance.shape == (10, 10)
+        assert covariance.MTime0.values.min() == start_mtime
+        assert covariance.MTime0.values.max() == end_mtime

@@ -168,3 +168,55 @@ class ConstantNoCorrelationCO(MeasurementCovarianceLoader):
             .astype(FLOAT_PRECISION)
             .compute()
         )
+
+
+class FromFileNoCorrelation(MeasurementCovarianceLoader):
+    def __init__(self, measurement_loader: MeasurementLoader, std_file: str):
+        """Covariance loader for measurements with constant standard deviation and no
+        correlation.
+
+        Args:
+            measurement_loader (MeasurementLoader): Measurement loader used in
+                 inversion.
+            std_file (str): Path to file with standard deviations.
+        """
+        super().__init__(measurement_loader)
+        self._std_file = std_file
+        self._std = None
+
+    @property
+    def std(self):
+        if self._std is None:
+            self._std = xr.open_dataarray(self._std_file).stack(
+                measurement=self.measurement_loader.footprint_loader.MEASUREMENT_DIMS
+            )
+        return self._std
+
+    def load_timeframe(
+        self, start_time: np.datetime64, end_time: np.datetime64
+    ) -> xr.DataArray:
+        measurement_subset = self.measurement_loader.measurements.unstack().sel(
+            MTime=slice(start_time, end_time)
+        )
+        selection = dict(
+            MTime=measurement_subset.MTime.values,
+            MPlace=measurement_subset.MPlace.values,
+        )
+        if "species" in measurement_subset.dims:
+            selection["species"] = measurement_subset.species.values
+
+        std_subset = (
+            self.std.unstack()
+            .sel(**selection)
+            .stack(
+                measurement=self.measurement_loader.footprint_loader.MEASUREMENT_DIMS
+            )
+        )
+        return (
+            (
+                xr.zeros_like(self._to_two_dimensions(std_subset))
+                + np.diag(std_subset.data**2)
+            )
+            .astype(FLOAT_PRECISION)
+            .compute()
+        )
