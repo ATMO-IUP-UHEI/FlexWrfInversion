@@ -6,6 +6,8 @@ from flexwrfinversion.loaders.measurement_covariance import (
     ConstantNoCorrelation,
     ConstantNoCorrelationCO,
     ConstantPlusRelativeNoCorrelation,
+    FromFileNoCorrelation,
+    FromFileNoCorrelationCO,
 )
 
 
@@ -140,3 +142,181 @@ class Test_ConstantNoCorrelationCO:
         )
         assert set(covariance.dims) == {"measurement0", "measurement1"}
         assert set(covariance.unstack().species0.values) == {"CO", "CO2"}
+
+
+class Test_FromFileNoCorrelation:
+    def test_std(self, tmp_path, flexible_measurement_loader_total):
+        std = (
+            np.abs(flexible_measurement_loader_total.measurements.unstack()) * 0.1
+            + 2e-6
+        )
+        std.to_netcdf(tmp_path / "measurement_std.nc")
+        measurement_covariance = FromFileNoCorrelation(
+            measurement_loader=flexible_measurement_loader_total,
+            std_file=tmp_path / "measurement_std.nc",
+        )
+        std_loaded = measurement_covariance.std
+        assert (std_loaded.unstack() == std).all()
+        assert set(std_loaded.dims) == {"measurement"}
+        assert (
+            std_loaded.measurement
+            == flexible_measurement_loader_total.measurements.measurement
+        ).all()
+
+    def test_std_ppm_error_not_quardatic(
+        self, tmp_path, flexible_measurement_loader_total
+    ):
+        std = np.abs(flexible_measurement_loader_total.measurements.unstack()) * 0.1
+        std.to_netcdf(tmp_path / "measurement_std.nc")
+        measurement_covariance = FromFileNoCorrelation(
+            measurement_loader=flexible_measurement_loader_total,
+            std_file=tmp_path / "measurement_std.nc",
+            ppm_error=2,
+            add_quadratic=False,
+        )
+        std_loaded = measurement_covariance.std
+        assert (std_loaded.unstack() == std + 2e-6).all()
+        assert set(std_loaded.dims) == {"measurement"}
+        assert (
+            std_loaded.measurement
+            == flexible_measurement_loader_total.measurements.measurement
+        ).all()
+
+    def test_std_ppm_error_quardatic(self, tmp_path, flexible_measurement_loader_total):
+        std = np.abs(flexible_measurement_loader_total.measurements.unstack()) * 0.1
+        std.to_netcdf(tmp_path / "measurement_std.nc")
+        measurement_covariance = FromFileNoCorrelation(
+            measurement_loader=flexible_measurement_loader_total,
+            std_file=tmp_path / "measurement_std.nc",
+            ppm_error=2,
+        )
+        std_loaded = measurement_covariance.std
+        assert (std_loaded.unstack() > std).all()
+        assert (std_loaded.unstack() == np.sqrt(std**2 + 2e-6**2)).all()
+        assert set(std_loaded.dims) == {"measurement"}
+        assert (
+            std_loaded.measurement
+            == flexible_measurement_loader_total.measurements.measurement
+        ).all()
+
+    def test_load_timeframe(self, tmp_path, flexible_measurement_loader_total):
+        std = (
+            np.abs(flexible_measurement_loader_total.measurements.unstack()) * 0.1
+            + 2e-6
+        )
+        std.to_netcdf(tmp_path / "measurement_std.nc")
+        measurement_covariance = FromFileNoCorrelation(
+            measurement_loader=flexible_measurement_loader_total,
+            std_file=tmp_path / "measurement_std.nc",
+        )
+        start_mtime = (
+            flexible_measurement_loader_total.measurements.unstack().MTime.values[0]
+        )
+        end_mtime = (
+            flexible_measurement_loader_total.measurements.unstack().MTime.values[4]
+        )
+        covariance = measurement_covariance.load_timeframe(
+            start_time=start_mtime, end_time=end_mtime
+        )
+        assert covariance is not None
+        assert covariance.shape == (10, 10)
+        assert covariance.MTime0.values.min() == start_mtime
+        assert covariance.MTime0.values.max() == end_mtime
+
+
+class Test_FromFileNoCorrelationCO:
+    def test_std(self, tmp_path, flexible_measurement_loader_total_co):
+        std = (
+            np.abs(flexible_measurement_loader_total_co.measurements.unstack()) * 0.1
+            + 2e-6
+        )
+        std.to_netcdf(tmp_path / "measurement_std.nc")
+        measurement_covariance = FromFileNoCorrelationCO(
+            measurement_loader=flexible_measurement_loader_total_co,
+            std_file=tmp_path / "measurement_std.nc",
+        )
+        std_loaded = measurement_covariance.std
+        assert (std_loaded.unstack() == std).all()
+        assert set(std_loaded.dims) == {"measurement"}
+        assert (
+            std_loaded.measurement
+            == flexible_measurement_loader_total_co.measurements.measurement
+        ).all()
+
+    def test_std_ppm_ppb_error_not_quardatic(
+        self, tmp_path, flexible_measurement_loader_total_co
+    ):
+        std = np.abs(flexible_measurement_loader_total_co.measurements.unstack()) * 0.1
+        std.to_netcdf(tmp_path / "measurement_std.nc")
+        measurement_covariance = FromFileNoCorrelationCO(
+            measurement_loader=flexible_measurement_loader_total_co,
+            std_file=tmp_path / "measurement_std.nc",
+            ppm_error=2,
+            ppb_error=10,
+            add_quadratic=False,
+        )
+        std_loaded = measurement_covariance.std
+        assert (
+            std_loaded.unstack().sel(species="CO2") == std.sel(species="CO2") + 2e-6
+        ).all()
+        assert (
+            std_loaded.unstack().sel(species="CO") == std.sel(species="CO") + 10e-9
+        ).all()
+        assert set(std_loaded.dims) == {"measurement"}
+        assert (
+            std_loaded.measurement
+            == flexible_measurement_loader_total_co.measurements.measurement
+        ).all()
+
+    def test_std_ppm_ppb_error_quardatic(
+        self, tmp_path, flexible_measurement_loader_total_co
+    ):
+        std = np.abs(flexible_measurement_loader_total_co.measurements.unstack()) * 0.1
+        std.to_netcdf(tmp_path / "measurement_std.nc")
+        measurement_covariance = FromFileNoCorrelationCO(
+            measurement_loader=flexible_measurement_loader_total_co,
+            std_file=tmp_path / "measurement_std.nc",
+            ppm_error=2,
+            ppb_error=10,
+        )
+        std_loaded = measurement_covariance.std
+        assert (std_loaded.unstack() > std).all()
+        assert (
+            std_loaded.unstack().sel(species="CO2")
+            == np.sqrt(std.sel(species="CO2") ** 2 + 2e-6**2)
+        ).all()
+        assert (
+            std_loaded.unstack().sel(species="CO")
+            == np.sqrt(std.sel(species="CO") ** 2 + 10e-9**2)
+        ).all()
+        assert set(std_loaded.dims) == {"measurement"}
+        assert (
+            std_loaded.measurement
+            == flexible_measurement_loader_total_co.measurements.measurement
+        ).all()
+
+    def test_load_timeframe(self, tmp_path, flexible_measurement_loader_total_co):
+        std = (
+            np.abs(flexible_measurement_loader_total_co.measurements.unstack()) * 0.1
+            + 2e-6
+        )
+        std.to_netcdf(tmp_path / "measurement_std.nc")
+        measurement_covariance = FromFileNoCorrelationCO(
+            measurement_loader=flexible_measurement_loader_total_co,
+            std_file=tmp_path / "measurement_std.nc",
+        )
+        start_mtime = (
+            flexible_measurement_loader_total_co.measurements.unstack().MTime.values[0]
+        )
+        end_mtime = (
+            flexible_measurement_loader_total_co.measurements.unstack().MTime.values[4]
+        )
+        covariance = measurement_covariance.load_timeframe(
+            start_time=start_mtime, end_time=end_mtime
+        )
+        assert covariance is not None
+        assert covariance.shape == (20, 20)
+        assert covariance.MTime0.values.min() == start_mtime
+        assert covariance.MTime0.values.max() == end_mtime
+        assert set(covariance.unstack().species0.values) == {"CO", "CO2"}
+        assert set(covariance.dims) == {"measurement0", "measurement1"}
