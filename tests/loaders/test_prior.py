@@ -2,6 +2,8 @@ import numpy as np
 import pytest
 import xarray as xr
 
+from flexwrfinversion.loaders.prior import PriorIsTarget
+
 
 class Test_FlatPrior:
     def test_prior(self, flat_prior, flat_prior_with_co):
@@ -139,3 +141,28 @@ class Test_PriorLoaderAnthBioCo_RelativeError_PointExtra:
             atol=0,
             rtol=1e-3,
         )
+
+
+class Test_PriorIsTarget:
+    def test_prior(self, flexible_target_loader_total):
+        prior_is_target = PriorIsTarget(flexible_target_loader_total)
+        prior = prior_is_target.prior
+        target = flexible_target_loader_total.target
+
+        assert (prior == target).all()
+
+    def test_load_timeframe(self, flexible_target_loader_total):
+        prior_is_target = PriorIsTarget(flexible_target_loader_total)
+        prior = prior_is_target.prior
+        start_time = prior["Time"].values[0]
+        end_time = prior["Time"].values[3]
+        prior_snippet = prior_is_target.load_timeframe(
+            start_time=start_time, end_time=end_time
+        )
+
+        assert prior_snippet is not None
+        assert isinstance(prior_snippet, xr.DataArray)
+        assert (
+            prior_snippet.unstack()
+            == prior.unstack().sel(Time=slice(start_time, end_time))
+        ).all()

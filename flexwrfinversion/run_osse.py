@@ -55,6 +55,7 @@ from flexwrfinversion.loaders.measurement import (
     FlexibleMeasurementLoaderTotal,
     FlexibleMeasurementLoaderTotalCo,
     MeasurementLoader,
+    MeasurementLoaderFromSingleFileTotal,
 )
 from flexwrfinversion.loaders.measurement_covariance import (
     ConstantNoCorrelation,
@@ -65,6 +66,7 @@ from flexwrfinversion.loaders.measurement_covariance import (
 from flexwrfinversion.loaders.prior import (
     FlatPrior,
     FlexiblePriorLoaderTotal_ShiftToBiospheric,
+    PriorIsTarget,
     PriorLoader,
     PriorLoaderAnthBio_RelativeError_PointExtra,
     PriorLoaderAnthBioCo_RelativeError_PointExtra,
