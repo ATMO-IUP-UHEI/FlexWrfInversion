@@ -171,7 +171,9 @@ class ConstantNoCorrelationCO(MeasurementCovarianceLoader):
 
 
 class FromFileNoCorrelation(MeasurementCovarianceLoader):
-    def __init__(self, measurement_loader: MeasurementLoader, std_file: str):
+    def __init__(
+        self, measurement_loader: MeasurementLoader, std_file: str, ppm_error: float = 0
+    ):
         """Covariance loader for measurements with constant standard deviation and no
         correlation.
 
@@ -179,9 +181,11 @@ class FromFileNoCorrelation(MeasurementCovarianceLoader):
             measurement_loader (MeasurementLoader): Measurement loader used in
                  inversion.
             std_file (str): Path to file with standard deviations.
+            ppm_error (float): Error to apply to each measurment in ppm.
         """
         super().__init__(measurement_loader)
         self._std_file = std_file
+        self._ppm_error = ppm_error
         self._std = None
 
     @property
@@ -190,6 +194,8 @@ class FromFileNoCorrelation(MeasurementCovarianceLoader):
             self._std = xr.open_dataarray(self._std_file).stack(
                 measurement=self.measurement_loader.footprint_loader.MEASUREMENT_DIMS
             )
+            if self._ppm_error != 0:
+                self._std += self._ppm_error * 1e-6
         return self._std
 
     def load_timeframe(
@@ -220,3 +226,45 @@ class FromFileNoCorrelation(MeasurementCovarianceLoader):
             .astype(FLOAT_PRECISION)
             .compute()
         )
+
+
+class FromFileNoCorrelationCO(FromFileNoCorrelation):
+    def __init__(
+        self,
+        measurement_loader: MeasurementLoader,
+        std_file: str,
+        ppm_error: float = 0,
+        ppb_error: float = 0,
+    ):
+        """Covariance loader for measurements with constant standard deviation and no
+        correlation.
+
+        Args:
+            measurement_loader (MeasurementLoader): Measurement loader used in
+                 inversion.
+            std_file (str): Path to file with standard deviations.
+            ppm_error (float): Error to apply to each measurment in ppm.
+            ppb_error (float): Error to apply to each measurment in ppb.
+        """
+        super().__init__(measurement_loader, std_file, ppm_error)
+        self._ppb_error = ppb_error
+
+    @property
+    def std(self):
+        if self._std is None:
+            self._std = xr.open_dataarray(self._std_file).stack(
+                measurement=self.measurement_loader.footprint_loader.MEASUREMENT_DIMS
+            )
+            if self._ppm_error != 0:
+                self._std = xr.where(
+                    self._std.species == "CO2",
+                    self._std + self._ppm_error * 1e-6,
+                    self._std,
+                )
+            if self._ppb_error != 0:
+                self._std = xr.where(
+                    self._std.species == "CO",
+                    self._std + self._ppb_error * 1e-9,
+                    self._std,
+                )
+        return self._std
