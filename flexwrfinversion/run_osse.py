@@ -73,6 +73,7 @@ from flexwrfinversion.loaders.prior import (
 )
 from flexwrfinversion.loaders.prior_covariance import (
     DifferenceOfPriorToTarget,
+    DifferenceOfPriorToTargetMinimumFromFile,
     DifferenceOfPriorToTargetWithCO_Correlation,
     PriorCovarianceLoader,
     RelativeError,

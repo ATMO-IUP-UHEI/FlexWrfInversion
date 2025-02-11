@@ -407,3 +407,47 @@ class DifferenceOfPriorToTargetWithCO_Correlation(TargetAsErrorWithCO_Correlatio
                     self._prior_std,
                 )
         return self._prior_std
+
+
+class DifferenceOfPriorToTargetMinimumFromFile(PriorCovarianceLoader):
+    def __init__(
+        self,
+        prior_loader: PriorLoader,
+        minimum_error_file: str | Path = None,
+        spatial_correlation_path: str | Path = None,
+    ):
+        """Use target values as std for the covariance. Cannot use correlation.
+
+        Args:
+            prior_loader (PriorLoader): Prior loader of the inversion.
+            minimum_error (float, optional): Minimal error to allow. Defaults to None.
+            spatial_correlation_path (str | Path, optional): Path to the spatial
+                correlation to be used. Defaults to None.
+        """
+        super().__init__(prior_loader)
+        self._prior_std = None
+        self._minimum_error = None
+        self._minimum_error_file = minimum_error_file
+        self._spatial_correlation_path = spatial_correlation_path
+
+    @property
+    def minimum_error(self) -> xr.DataArray:
+        if self._minimum_error is None and self._minimum_error_file is not None:
+            self._minimum_error = xr.load_dataarray(self._minimum_error_file).stack(
+                state=self.prior_loader.target_loader.STATE_DIMS
+            )
+        return self._minimum_error
+
+    @property
+    def prior_std(self) -> xr.DataArray:
+        if self._prior_std is None:
+            self._prior_std = np.abs(
+                self.prior_loader.prior - self.prior_loader.target_loader.target
+            )
+            if self.minimum_error is not None:
+                self._prior_std = xr.where(
+                    self._prior_std < self.minimum_error,
+                    self.minimum_error,
+                    self._prior_std,
+                )
+        return self._prior_std

@@ -2,6 +2,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import xarray as xr
 import yaml
 
 from flexwrfinversion.loaders.footprint import (
@@ -21,6 +22,7 @@ from flexwrfinversion.loaders.prior import (
 )
 from flexwrfinversion.loaders.prior_covariance import (
     DifferenceOfPriorToTarget,
+    DifferenceOfPriorToTargetMinimumFromFile,
     DifferenceOfPriorToTargetWithCO_Correlation,
     RelativeError,
     TargetAsError,
@@ -364,6 +366,19 @@ def difference_of_prior_to_target_with_co_correlation(flat_prior_with_co):
     return DifferenceOfPriorToTargetWithCO_Correlation(
         prior_loader=flat_prior_with_co,
         anth_co_correlation=0.5,
+    )
+
+
+@pytest.fixture
+def difference_of_prior_to_target_minimum_from_file(tmp_path, flat_prior):
+    minimum_file = tmp_path / "minimum_error.nc"
+    target = flat_prior.target_loader.target.unstack()
+    prior = flat_prior.prior.unstack()
+    abs_diff = np.abs(target - prior)
+    (xr.ones_like(target) * abs_diff.mean().item()).to_netcdf(minimum_file)
+    return DifferenceOfPriorToTargetMinimumFromFile(
+        prior_loader=flat_prior,
+        minimum_error_file=minimum_file,
     )
 
 
