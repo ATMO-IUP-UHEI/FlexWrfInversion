@@ -254,6 +254,7 @@ class Test_DifferenceOfPriorToTargetMinimumFromFile:
         assert isinstance(prior_std, xr.DataArray)
         assert len(prior_std.dims) == 1
         assert (prior_std >= 0).all()
+        assert (prior_std >= abs_diff.mean()).all()
         assert prior_std.min() == abs_diff.mean()
         assert prior_std.dims == target.dims
         assert prior_std.shape == target.shape
