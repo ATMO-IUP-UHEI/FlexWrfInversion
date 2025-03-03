@@ -31,7 +31,6 @@ output_name: ''                 # Name of the output file
 (start_index: #)                # Start index for the permutation (optional)
 ```
 """
-
 from multiprocessing import Pool
 from pathlib import Path
 
@@ -176,12 +175,12 @@ def _run_inversion_ym_with_globals(
         times = np.sort(np.unique(prior_emissions.Time))
         times_start = (
             np.sort(np.unique(prior_emissions.Time_start))
-            if "Time_start" in prior_emissions.dims
+            if "Time_start" in prior_emissions.coords
             else times
         )
         times_end = (
             np.sort(np.unique(prior_emissions.Time_end))
-            if "Time_end" in prior_emissions.dims
+            if "Time_end" in prior_emissions.coords
             else times
         )
         n_times = len(times)  # say n=100
