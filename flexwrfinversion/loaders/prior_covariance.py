@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import xarray as xr
+from loguru import logger
 
 from flexwrfinversion.loaders.prior import (
     FlexiblePriorLoaderTotal_ShiftToBiospheric,
@@ -114,6 +115,9 @@ class PriorCovarianceLoader(ABC):
                     coords=[("Time0", time_values), ("Time1", time_values)],
                 )
             else:
+                logger.info(
+                    f"Loading temporal correlation from {self._temporal_correlation_path}"
+                )
                 self._temporal_correlation = xr.open_dataarray(
                     self._temporal_correlation_path
                 ).compute()

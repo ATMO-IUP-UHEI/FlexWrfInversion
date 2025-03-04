@@ -80,6 +80,7 @@ measurement_bias_loader = None
 n_temporal_slices = None
 temporal_buffer_steps = 0
 meas_buffer_steps = 0
+temporal_slice_data = None
 
 
 def _initialize_measurement_bias_loader(
@@ -150,6 +151,7 @@ def _run_inversion_ym_with_globals(
     global n_temporal_slices
     global temporal_buffer_steps
     global meas_buffer_steps
+    global temporal_slice_data
 
     logger.info(f"Running permutation {i}")
     sites = mplace_value_permutations[i]
@@ -315,6 +317,109 @@ def _run_inversion_ym_with_globals(
             # logger.debug(f"{measurements_subset_timeframe.unstack().sizes=}")
             logger.debug(f"{posterior_emissions_timeframe.Time.values=}")
             logger.debug(f"{measurements_subset_timeframe.unstack().MTime.values=}")
+
+    elif temporal_slice_data is not None:
+        posterior_emissions = xr.full_like(prior_emissions, np.nan).unstack()
+        posterior_std = xr.full_like(prior_emissions, np.nan).unstack()
+
+        for slice_id in temporal_slice_data.slice_id:
+            start_time = temporal_slice_data.start_time.sel(slice_id=slice_id).values
+            end_time = temporal_slice_data.end_time.sel(slice_id=slice_id).values
+            start_with_buffer_time = temporal_slice_data.start_with_buffer_time.sel(
+                slice_id=slice_id
+            ).values
+            end_with_buffer_time = temporal_slice_data.end_with_buffer_time.sel(
+                slice_id=slice_id
+            ).values
+            measurement_start_with_buffer_time = (
+                temporal_slice_data.measurement_start_with_buffer_time.sel(
+                    slice_id=slice_id
+                ).values
+            )
+            measurement_end_with_buffer_time = (
+                temporal_slice_data.measurement_end_with_buffer_time.sel(
+                    slice_id=slice_id
+                ).values
+            )
+            prior_emissions_timeframe = prior_emissions.sel(
+                Time=slice(start_with_buffer_time, end_with_buffer_time)
+            )
+            prior_standard_deviation_timeframe = prior_standard_deviation.sel(
+                Time=slice(start_with_buffer_time, end_with_buffer_time)
+            )
+            prior_temporal_correlation_timeframe = prior_temporal_correlation.sel(
+                Time0=slice(start_with_buffer_time, end_with_buffer_time),
+                Time1=slice(start_with_buffer_time, end_with_buffer_time),
+            )
+            print("fp")
+            footprints_subset_timeframe = select_times(
+                footprints_subset.sel(
+                    Time=slice(start_with_buffer_time, end_with_buffer_time)
+                ),
+                "MTime",
+                "measurement",
+                measurement_start_with_buffer_time,
+                measurement_end_with_buffer_time,
+            )
+            print("ms")
+            measurements_subset_timeframe = select_times(
+                measurements_subset,
+                "MTime",
+                "measurement",
+                measurement_start_with_buffer_time,
+                measurement_end_with_buffer_time,
+            )
+            print("mc")
+            measurement_covariance_subset_timeframe = select_times(
+                select_times(
+                    measurement_covariance_subset,
+                    "MTime0",
+                    "measurement0",
+                    measurement_start_with_buffer_time,
+                    measurement_end_with_buffer_time,
+                ),
+                "MTime1",
+                "measurement1",
+                measurement_start_with_buffer_time,
+                measurement_end_with_buffer_time,
+            )
+            state_coordinate_timeframe = prior_emissions_timeframe.coords
+            solver = _compute_inversion(
+                loss_class=BayesianYM,
+                solver_class=BayesianAnalyticalYM,
+                prior=prior_emissions_timeframe.values,
+                prior_standard_deviation=prior_standard_deviation_timeframe.values,
+                prior_temporal_correlation=prior_temporal_correlation_timeframe.values,
+                prior_spatial_correlation=prior_spatial_correlation.values,
+                forward_model=footprints_subset_timeframe.data,
+                measurement=measurements_subset_timeframe.values,
+                measurement_covariance=measurement_covariance_subset_timeframe.values,
+            )
+            (
+                posterior_emissions_timeframe,
+                posterior_standard_deviations_timeframe,
+            ) = solver()
+            posterior_emissions_timeframe = (
+                xr.DataArray(
+                    posterior_emissions_timeframe, coords=state_coordinate_timeframe
+                )
+                .unstack()
+                .sel(Time=slice(start_time, end_time))
+            )
+            posterior_standard_deviations_timeframe = xr.DataArray(
+                posterior_standard_deviations_timeframe,
+                coords=state_coordinate_timeframe,
+            ).unstack()
+            # replace the values according to the start and end times
+            posterior_emissions.loc[
+                {"Time": slice(start_time, end_time)}
+            ] = posterior_emissions_timeframe.sel(Time=slice(start_time, end_time))
+            posterior_std.loc[
+                {"Time": slice(start_time, end_time)}
+            ] = posterior_standard_deviations_timeframe.sel(
+                Time=slice(start_time, end_time)
+            )
+
     else:
         solver = _compute_inversion(
             loss_class=BayesianYM,
@@ -483,6 +588,7 @@ def main(args):
     global n_temporal_slices
     global temporal_buffer_steps
     global meas_buffer_steps
+    global temporal_slice_data
 
     # load config yaml
     with args.config.open("r") as f:
@@ -490,7 +596,13 @@ def main(args):
     n_processes = 1
     if "n_processes" in config:
         n_processes = config["n_processes"]
-    if "n_temporal_slices" in config:
+
+    if "n_temporal_slices" in config and "temporal_slice_data_path" in config:
+        raise ValueError(
+            "Both 'n_temporal_slices' and 'temporal_slice_data' are provided. "
+            "Please provide only one."
+        )
+    elif "n_temporal_slices" in config:
         n_temporal_slices = config["n_temporal_slices"]
         if "temporal_buffer_steps" in config:
             temporal_buffer_steps = config["temporal_buffer_steps"]
@@ -501,6 +613,13 @@ def main(args):
             f"{temporal_buffer_steps} temporal buffer steps and "
             f"{meas_buffer_steps} measurement buffer steps."
         )
+
+    elif "temporal_slice_data_path" in config:
+        temporal_slice_data = xr.open_dataset(config["temporal_slice_data_path"])
+        logger.info(
+            f"Running with temporal slice data from {config['temporal_slice_data_path']}."
+        )
+
     # build paths for the inversion and setup directories
     output_dir = Path(config["output_dir"])
     output_name = config["output_name"]
