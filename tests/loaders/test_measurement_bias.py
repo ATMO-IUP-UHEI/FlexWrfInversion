@@ -3,6 +3,7 @@ import pytest
 
 from flexwrfinversion.loaders.measurement_bias import (
     ConstantBias,
+    ConstantPlusRandomBias,
     RandomStaticBias,
     RelativeBias,
 )
@@ -95,3 +96,24 @@ class Test_RelativeBias:
         assert bias.shape == measurements.shape
         assert set(bias.dims) == set(measurements.dims)
         assert np.allclose(bias, 0.2 * measurements, atol=0)
+
+
+class Test_ConstantPlusRandomBias:
+    def test_generate_bias(
+        self, flexible_measurement_loader_total, covariance_constant_no_correlation
+    ):
+        constant_plus_random_bias = ConstantPlusRandomBias(
+            measurement_loader=flexible_measurement_loader_total,
+            measurement_covariance_loader=covariance_constant_no_correlation,
+            constant_bias=2,
+            standard_devition_ppm=2,
+        )
+        constant_plus_random_bias.set_bias()
+        measurements = flexible_measurement_loader_total.measurements
+        bias0 = constant_plus_random_bias.generate_bias(measurements)
+        constant_plus_random_bias.set_bias()
+        bias1 = constant_plus_random_bias.generate_bias(measurements)
+        assert bias0.shape == measurements.shape
+        assert set(bias0.dims) == set(measurements.dims)
+        assert (bias1 != bias0).all()
+        assert np.allclose(bias1 - constant_plus_random_bias._bias, 0)

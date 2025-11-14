@@ -31,6 +31,8 @@ output_name: ''                 # Name of the output file
 (start_index: #)                # Start index for the permutation (optional)
 ```
 """
+import os
+import time
 from multiprocessing import Pool
 from pathlib import Path
 
@@ -48,6 +50,7 @@ from flexwrfinversion.loaders.footprint import FootprintLoader
 from flexwrfinversion.loaders.measurement import MeasurementLoader
 from flexwrfinversion.loaders.measurement_bias import (
     ConstantBias,
+    ConstantPlusRandomBias,
     MeasurementBias,
     RandomStaticBias,
     RelativeBias,
@@ -89,13 +92,11 @@ def _initialize_measurement_bias_loader(
     measurement_covariance_loader: MeasurementCovarianceLoader,
 ) -> MeasurementBias:
     measurement_bias_loader = None
-    if "measurement_bias" in config:
-        measurement_bias_loader = eval(
-            config["measurement_bias"]["measurement_bias_loader"]
-        )(
+    if "bias" in config:
+        measurement_bias_loader = eval(config["bias"]["measurement_bias_loader"])(
             measurement_loader=measurement_loader,
             measurement_covariance_loader=measurement_covariance_loader,
-            **config["measurement_bias"]["kwargs"],
+            **config["bias"]["kwargs"],
         )
     return measurement_bias_loader
 
@@ -155,6 +156,8 @@ def _run_inversion_ym_with_globals(
 
     logger.info(f"Running permutation {i}")
     sites = mplace_value_permutations[i]
+
+    np.random.seed(int((os.getpid() * int(time.time_ns())) % 2**32))
 
     site_selection = measurements.unstack().MPlace.isin(sites)
     (
@@ -351,7 +354,6 @@ def _run_inversion_ym_with_globals(
                 Time0=slice(start_with_buffer_time, end_with_buffer_time),
                 Time1=slice(start_with_buffer_time, end_with_buffer_time),
             )
-            print("fp")
             footprints_subset_timeframe = select_times(
                 footprints_subset.sel(
                     Time=slice(start_with_buffer_time, end_with_buffer_time)
@@ -361,7 +363,6 @@ def _run_inversion_ym_with_globals(
                 measurement_start_with_buffer_time,
                 measurement_end_with_buffer_time,
             )
-            print("ms")
             measurements_subset_timeframe = select_times(
                 measurements_subset,
                 "MTime",
@@ -369,7 +370,6 @@ def _run_inversion_ym_with_globals(
                 measurement_start_with_buffer_time,
                 measurement_end_with_buffer_time,
             )
-            print("mc")
             measurement_covariance_subset_timeframe = select_times(
                 select_times(
                     measurement_covariance_subset,
@@ -620,6 +620,12 @@ def main(args):
             f"Running with temporal slice data from {config['temporal_slice_data_path']}."
         )
 
+    if "start_index" in config:
+        start_index = config["start_index"]
+        logger.info(f"Starting from permutation {start_index}")
+    else:
+        start_index = 0
+
     # build paths for the inversion and setup directories
     output_dir = Path(config["output_dir"])
     output_name = config["output_name"]
@@ -693,9 +699,12 @@ def main(args):
 
     with Pool(n_processes) as pool:
         # start  processes with tqdm
-        with tqdm(total=len(mplace_value_permutations), smoothing=0) as pbar:
+        with tqdm(
+            total=len(mplace_value_permutations) - start_index, smoothing=0
+        ) as pbar:
             for _ in pool.imap_unordered(
-                _run_inversion_ym_with_globals, range(len(mplace_value_permutations))
+                _run_inversion_ym_with_globals,
+                range(start_index, len(mplace_value_permutations)),
             ):
                 pbar.update()
 
@@ -714,12 +723,29 @@ def main(args):
                 zarr_format=2,
                 append_dim="permutation",
             )
-
     # Delete the buffer files
     for file in output_buffer_path.glob("permutation_*.nc"):
         file.unlink()
 
     output_buffer_path.rmdir()
+
+    # If save measurements is set, save the measurements and the standard deviations
+    if "save_concentrations" in config and config["save_concentrations"]:
+        measurement_save_name = (
+            output_dir / f"{output_name.split('.')[0]}_measurements.nc"
+        )
+        measurement_dataset = xr.Dataset(
+            {
+                "measurements": measurements,
+                "measurement_stds": xr.DataArray(
+                    np.diag(measurement_covariance.values) ** 0.5,
+                    coords=measurements.coords,
+                ),
+            },
+        ).unstack()
+        logger.info(f"Saving measurements to {measurement_save_name}")
+        measurement_dataset.to_netcdf(measurement_save_name)
+    logger.success("OSSE complete")
 
 
 if __name__ == "__main__":
