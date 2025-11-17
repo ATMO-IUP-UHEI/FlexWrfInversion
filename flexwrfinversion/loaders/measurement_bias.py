@@ -88,6 +88,52 @@ class RandomStaticBias(MeasurementBias):
         return bias_selection
 
 
+class ConstantPlusRandomBias(MeasurementBias):
+    def __init__(
+        self,
+        measurement_loader,
+        measurement_covariance_loader,
+        constant_bias,
+        standard_devition_ppm,
+    ):
+        """Bias loader for measurements with constant bias and random static bias.
+
+        Args:
+            measurement_loader (MeasurementLoader): Measurement loader used in inversion.
+            measurement_covariance_loader (MeasurementCovarianceLoader): Measurement
+                covariance loader used in inversion.
+            constant_bias (float): The constant bias to apply to the measurements.
+            standard_devition_ppm (float): The standard deviation of the bias in ppm.
+        """
+        super().__init__(measurement_loader, measurement_covariance_loader)
+        self.constant_bias = constant_bias
+        self.standard_devition_ppm = standard_devition_ppm
+        self._bias = None
+
+    def set_bias(self):
+        mplaces = self.measurement_loader.measurements.unstack().MPlace
+        mtimes = self.measurement_loader.measurements.unstack().MTime
+        self._bias = (
+            xr.DataArray(
+                np.random.normal(0, self.standard_devition_ppm * 1e-6, len(mplaces)),
+                coords=[("MPlace", mplaces.values)],
+            )
+            .expand_dims(MTime=mtimes.values)
+            .stack(
+                measurement=self.measurement_loader.footprint_loader.MEASUREMENT_DIMS
+            )
+        ) + self.constant_bias * 1e-6
+
+    def generate_bias(self, measurements: xr.DataArray) -> xr.DataArray:
+        bias_selection = self._bias.isel(
+            measurement=(
+                self._bias.MTime.isin(measurements.unstack().MTime)
+                & self._bias.MPlace.isin(measurements.unstack().MPlace)
+            )
+        )
+        return bias_selection
+
+
 class RelativeBias(MeasurementBias):
     def __init__(
         self,

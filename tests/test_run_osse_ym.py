@@ -21,7 +21,7 @@ def test_run_inversion_ym_with_globals(tmp_path, flexible_measurement_loader_tot
     )
     # Create synthetic data
     mplace = np.char.encode(np.array(["site1", "site2", "site3"]))
-    mtime = pd.date_range("2020-01-01", periods=10, freq="h").to_numpy()
+    mtime = pd.date_range("2020-01-02", periods=10, freq="h").to_numpy()
     time = pd.date_range("2020-01-01T22", periods=12, freq="h").to_numpy()
     subsectors = np.arange(5)
     sites = mplace[:2]
@@ -221,3 +221,192 @@ def test_restack_coords():
     assert isinstance(restacked, xr.DataArray)
     assert set(restacked.dims) == {"measurement", "Time", "subsector_sector"}
     assert restacked.shape == (10, 5, 4 * 2)
+
+
+def test_run_inversion_ym_with_globals_time_slice_data(tmp_path):
+    n_times = 102
+    len_footprint = 2
+
+    n_subsectors = 1
+    # Create synthetic data
+    mplace = np.char.encode(np.array(["site1", "site2", "site3"]))
+    mtime = pd.date_range(
+        "2020-01-02", periods=n_times - len_footprint, freq="h"
+    ).to_numpy()
+    time = pd.date_range("2020-01-01T22", periods=n_times, freq="h").to_numpy()
+    subsectors = np.arange(n_subsectors)
+    sites = mplace[:1]
+    prior_emissions = xr.DataArray(
+        np.zeros(shape=(n_times, n_subsectors)),
+        coords={"Time": time, "subsector": subsectors},
+    )
+    prior_standard_deviation = xr.DataArray(
+        np.ones((n_times, n_subsectors)), coords={"Time": time, "subsector": subsectors}
+    )
+    prior_temporal_correlation = xr.DataArray(
+        np.eye(n_times), coords={"Time0": time, "Time1": time}
+    )
+    prior_spatial_correlation = xr.DataArray(
+        np.eye(n_subsectors),
+        coords={"subsector0": subsectors, "subsector1": subsectors},
+    )
+    footprints = (
+        xr.DataArray(
+            np.ones((3, n_times - len_footprint, n_times, n_subsectors)),
+            coords={
+                "MPlace": mplace,
+                "MTime": mtime,
+                "Time": time,
+                "subsector": subsectors,
+            },
+        )
+        .stack(measurement=["MPlace", "MTime"])
+        .transpose("measurement", "Time", "subsector")
+    )
+    mask = (time[:, None] <= mtime[None, :]) & (
+        time[:, None] >= mtime[None, :] - np.timedelta64(len_footprint, "h")
+    )
+    footprints = (
+        (footprints.unstack() * mask[:, None, None, :])
+        .stack(measurement=["MPlace", "MTime"])
+        .transpose("measurement", "Time", "subsector")
+    )
+
+    measurements = xr.DataArray(
+        20 * np.ones(shape=(3, n_times - len_footprint)),
+        coords={"MPlace": mplace, "MTime": mtime},
+    ).stack(measurement=["MPlace", "MTime"])
+    measurement_covariance = xr.DataArray(
+        np.eye(3)[:, None, :, None] * np.eye(n_times - len_footprint)[None, :, None, :],
+        coords={"MPlace0": mplace, "MTime0": mtime, "MPlace1": mplace, "MTime1": mtime},
+    ).stack(measurement0=["MPlace0", "MTime0"], measurement1=["MPlace1", "MTime1"])
+    target_emissions = xr.DataArray(
+        np.random.randn(n_times, n_subsectors),
+        coords={"Time": time, "subsector": subsectors},
+    )
+
+    # Create temporal slice data
+    len_slices = 10
+    start_times = time[len_footprint::len_slices]
+    end_times = time[len_footprint + len_slices - 1 :: len_slices]
+    start_with_buffer_times = start_times - np.timedelta64(len_footprint * 5, "h")
+    end_with_buffer_times = np.min(
+        np.array(
+            [
+                end_times + np.timedelta64(len_footprint * 5, "h"),
+                time[-1].repeat(len(end_times)),
+            ]
+        ),
+        axis=0,
+    )
+
+    measurement_start_with_buffer_times = start_with_buffer_times
+    measurement_end_with_buffer_times = end_with_buffer_times
+
+    start_times = xr.DataArray(
+        start_times, coords={"slice_id": np.arange(len(start_times))}, name="start_time"
+    )
+    end_times = xr.DataArray(
+        end_times, coords={"slice_id": np.arange(len(end_times))}, name="end_time"
+    )
+    start_with_buffer_times = xr.DataArray(
+        start_with_buffer_times,
+        coords={"slice_id": np.arange(len(start_with_buffer_times))},
+        name="start_with_buffer_time",
+    )
+    end_with_buffer_times = xr.DataArray(
+        end_with_buffer_times,
+        coords={"slice_id": np.arange(len(end_with_buffer_times))},
+        name="end_with_buffer_time",
+    )
+    measurement_start_with_buffer_times = xr.DataArray(
+        measurement_start_with_buffer_times,
+        coords={"slice_id": np.arange(len(measurement_start_with_buffer_times))},
+        name="measurement_start_with_buffer_time",
+    )
+    measurement_end_with_buffer_times = xr.DataArray(
+        measurement_end_with_buffer_times,
+        coords={"slice_id": np.arange(len(measurement_end_with_buffer_times))},
+        name="measurement_end_with_buffer_time",
+    )
+    temporal_slice_data = xr.merge(
+        [
+            start_times,
+            end_times,
+            start_with_buffer_times,
+            end_with_buffer_times,
+            measurement_start_with_buffer_times,
+            measurement_end_with_buffer_times,
+        ]
+    )
+
+    original_buffer = tmp_path / "original"
+    new_buffer = tmp_path / "new"
+    original_buffer.mkdir()
+    new_buffer.mkdir()
+
+    with patch.multiple(
+        "flexwrfinversion.run_osse_ym",
+        prior_emissions=prior_emissions.astype(np.float32),
+        prior_standard_deviation=prior_standard_deviation.astype(np.float32),
+        prior_temporal_correlation=prior_temporal_correlation.astype(np.float32),
+        prior_spatial_correlation=prior_spatial_correlation.astype(np.float32),
+        footprints=footprints.astype(np.float32),
+        measurements=measurements.astype(np.float32),
+        measurement_covariance=measurement_covariance.astype(np.float32),
+        target_emissions=target_emissions.astype(np.float32),
+        mplace_value_permutations=[sites],
+        output_buffer_path=original_buffer,
+        measurement_bias_loader=None,
+        temporal_slice_data=None,
+    ):
+        _ = _run_inversion_ym_with_globals(0)
+
+    with patch.multiple(
+        "flexwrfinversion.run_osse_ym",
+        prior_emissions=prior_emissions.astype(np.float32),
+        prior_standard_deviation=prior_standard_deviation.astype(np.float32),
+        prior_temporal_correlation=prior_temporal_correlation.astype(np.float32),
+        prior_spatial_correlation=prior_spatial_correlation.astype(np.float32),
+        footprints=footprints.astype(np.float32),
+        measurements=measurements.astype(np.float32),
+        measurement_covariance=measurement_covariance.astype(np.float32),
+        target_emissions=target_emissions.astype(np.float32),
+        mplace_value_permutations=[sites],
+        output_buffer_path=new_buffer,
+        measurement_bias_loader=None,
+        temporal_slice_data=temporal_slice_data,
+    ):
+        _ = _run_inversion_ym_with_globals(0)
+
+    original_result = xr.load_dataset(original_buffer / "permutation_0.nc").isel(
+        Time=slice(2, None)
+    )
+    new_result = xr.load_dataset(new_buffer / "permutation_0.nc").isel(
+        Time=slice(2, None)
+    )
+    assert isinstance(new_result, xr.Dataset)
+    assert "posterior_emissions" in new_result
+    assert "posterior_std" in new_result
+
+    posterior_emissions = new_result.posterior_emissions
+    posterior_std = new_result.posterior_std
+
+    assert (
+        set(posterior_emissions.dims) - {"permutation"}
+        == set(prior_emissions.dims)
+        == {"Time", "subsector"}
+    )
+    assert (
+        set(posterior_std.dims) - {"permutation"}
+        == set(prior_standard_deviation.dims)
+        == {"Time", "subsector"}
+    )
+    for dim in prior_emissions.dims:
+        assert (new_result.posterior_emissions[dim] == prior_emissions[dim]).all()
+        assert (new_result.posterior_std[dim] == prior_standard_deviation[dim]).all()
+
+    assert np.allclose(
+        posterior_emissions, original_result.posterior_emissions, atol=0, rtol=1e-2
+    )
+    assert np.allclose(posterior_std, original_result.posterior_std, atol=0, rtol=1e-2)

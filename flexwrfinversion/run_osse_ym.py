@@ -31,7 +31,8 @@ output_name: ''                 # Name of the output file
 (start_index: #)                # Start index for the permutation (optional)
 ```
 """
-
+import os
+import time
 from multiprocessing import Pool
 from pathlib import Path
 
@@ -49,6 +50,7 @@ from flexwrfinversion.loaders.footprint import FootprintLoader
 from flexwrfinversion.loaders.measurement import MeasurementLoader
 from flexwrfinversion.loaders.measurement_bias import (
     ConstantBias,
+    ConstantPlusRandomBias,
     MeasurementBias,
     RandomStaticBias,
     RelativeBias,
@@ -78,6 +80,7 @@ measurement_covariance = None
 target_emissions = None
 output_buffer_path = None
 measurement_bias_loader = None
+temporal_slice_data = None
 
 
 def _initialize_measurement_bias_loader(
@@ -86,15 +89,37 @@ def _initialize_measurement_bias_loader(
     measurement_covariance_loader: MeasurementCovarianceLoader,
 ) -> MeasurementBias:
     measurement_bias_loader = None
-    if "measurement_bias" in config:
-        measurement_bias_loader = eval(
-            config["measurement_bias"]["measurement_bias_loader"]
-        )(
+    if "bias" in config:
+        measurement_bias_loader = eval(config["bias"]["measurement_bias_loader"])(
             measurement_loader=measurement_loader,
             measurement_covariance_loader=measurement_covariance_loader,
-            **config["measurement_bias"]["kwargs"],
+            **config["bias"]["kwargs"],
         )
     return measurement_bias_loader
+
+
+def select_times(
+    data: xr.DataArray,
+    variable: str,
+    dim: str,
+    start: np.datetime64,
+    end: np.datetime64,
+) -> xr.DataArray:
+    """
+    Selects a time slice from the data.
+
+    Args:
+        data (xr.DataArray): Data to slice.
+        variable (str): Variable to slice.
+        start (np.datetime64): Start time.
+        end (np.datetime64): End time.
+
+    Returns:
+        xr.DataArray: Sliced data.
+    """
+    return data.isel(
+        {dim: (data[variable].values >= start) & (data[variable].values <= end)}
+    )
 
 
 def _run_inversion_ym_with_globals(
@@ -121,8 +146,12 @@ def _run_inversion_ym_with_globals(
     global target_emissions
     global output_buffer_path
     global measurement_bias_loader
+    global temporal_slice_data
+
     logger.info(f"Running permutation {i}")
     sites = mplace_value_permutations[i]
+
+    np.random.seed(int((os.getpid() * int(time.time_ns())) % 2**32))
 
     site_selection = measurements.unstack().MPlace.isin(sites)
     (
@@ -139,24 +168,136 @@ def _run_inversion_ym_with_globals(
             + measurement_bias_loader.generate_bias(measurements_subset)
         )
 
-    solver = _compute_inversion(
-        loss_class=BayesianYM,
-        solver_class=BayesianAnalyticalYM,
-        prior=prior_emissions.values,
-        prior_standard_deviation=prior_standard_deviation.values,
-        prior_temporal_correlation=prior_temporal_correlation.values,
-        prior_spatial_correlation=prior_spatial_correlation.values,
-        forward_model=footprints_subset.data,
-        measurement=measurements_subset.values,
-        measurement_covariance=measurement_covariance_subset.values,
-    )
-    posterior_emissions, posterior_standard_deviations = solver()
-    posterior_emissions = xr.DataArray(
-        posterior_emissions, coords=state_coordinates
-    ).unstack()
-    posterior_std = xr.DataArray(
-        posterior_standard_deviations, coords=state_coordinates
-    ).unstack()
+    # Calculate the result either in slices or all at once
+    if temporal_slice_data is not None:
+        # Setup arrays to hold the results
+        posterior_emissions = xr.full_like(prior_emissions, np.nan).unstack()
+        posterior_std = xr.full_like(prior_emissions, np.nan).unstack()
+
+        for slice_id in temporal_slice_data.slice_id:
+            # Prepare timeframes for the different data types
+            # start_time, end_time are the times we want to save to the result
+            # start_with_buffer_time, end_with_buffer_time are the times we need
+            #   additionally to account for footprints that reach beyond hat time
+            # measurement_start_with_buffer_time, measurement_end_with_buffer_time are
+            #   the times we need measurements for (e.g. also measurements after end_time
+            #   can constrain the emissions before end_time)
+            start_time = temporal_slice_data.start_time.sel(slice_id=slice_id).values
+            end_time = temporal_slice_data.end_time.sel(slice_id=slice_id).values
+            start_with_buffer_time = temporal_slice_data.start_with_buffer_time.sel(
+                slice_id=slice_id
+            ).values
+            end_with_buffer_time = temporal_slice_data.end_with_buffer_time.sel(
+                slice_id=slice_id
+            ).values
+            measurement_start_with_buffer_time = (
+                temporal_slice_data.measurement_start_with_buffer_time.sel(
+                    slice_id=slice_id
+                ).values
+            )
+            measurement_end_with_buffer_time = (
+                temporal_slice_data.measurement_end_with_buffer_time.sel(
+                    slice_id=slice_id
+                ).values
+            )
+
+            # Select the data according to the timeframes
+            prior_emissions_timeframe = prior_emissions.sel(
+                Time=slice(start_with_buffer_time, end_with_buffer_time)
+            )
+            prior_standard_deviation_timeframe = prior_standard_deviation.sel(
+                Time=slice(start_with_buffer_time, end_with_buffer_time)
+            )
+            prior_temporal_correlation_timeframe = prior_temporal_correlation.sel(
+                Time0=slice(start_with_buffer_time, end_with_buffer_time),
+                Time1=slice(start_with_buffer_time, end_with_buffer_time),
+            )
+            footprints_subset_timeframe = select_times(
+                footprints_subset.sel(
+                    Time=slice(start_with_buffer_time, end_with_buffer_time)
+                ),
+                "MTime",
+                "measurement",
+                measurement_start_with_buffer_time,
+                measurement_end_with_buffer_time,
+            )
+            measurements_subset_timeframe = select_times(
+                measurements_subset,
+                "MTime",
+                "measurement",
+                measurement_start_with_buffer_time,
+                measurement_end_with_buffer_time,
+            )
+            measurement_covariance_subset_timeframe = select_times(
+                select_times(
+                    measurement_covariance_subset,
+                    "MTime0",
+                    "measurement0",
+                    measurement_start_with_buffer_time,
+                    measurement_end_with_buffer_time,
+                ),
+                "MTime1",
+                "measurement1",
+                measurement_start_with_buffer_time,
+                measurement_end_with_buffer_time,
+            )
+            state_coordinate_timeframe = prior_emissions_timeframe.coords
+
+            # run the inversion for the timeframe
+            solver = _compute_inversion(
+                loss_class=BayesianYM,
+                solver_class=BayesianAnalyticalYM,
+                prior=prior_emissions_timeframe.values,
+                prior_standard_deviation=prior_standard_deviation_timeframe.values,
+                prior_temporal_correlation=prior_temporal_correlation_timeframe.values,
+                prior_spatial_correlation=prior_spatial_correlation.values,
+                forward_model=footprints_subset_timeframe.data,
+                measurement=measurements_subset_timeframe.values,
+                measurement_covariance=measurement_covariance_subset_timeframe.values,
+            )
+            (
+                posterior_emissions_timeframe,
+                posterior_standard_deviations_timeframe,
+            ) = solver()
+            posterior_emissions_timeframe = (
+                xr.DataArray(
+                    posterior_emissions_timeframe, coords=state_coordinate_timeframe
+                )
+                .unstack()
+                .sel(Time=slice(start_time, end_time))
+            )
+            posterior_standard_deviations_timeframe = xr.DataArray(
+                posterior_standard_deviations_timeframe,
+                coords=state_coordinate_timeframe,
+            ).unstack()
+
+            # replace the values according to the start and end times
+            posterior_emissions.loc[
+                {"Time": slice(start_time, end_time)}
+            ] = posterior_emissions_timeframe.sel(Time=slice(start_time, end_time))
+            posterior_std.loc[
+                {"Time": slice(start_time, end_time)}
+            ] = posterior_standard_deviations_timeframe.sel(
+                Time=slice(start_time, end_time)
+            )
+
+    else:
+        solver = _compute_inversion(
+            loss_class=BayesianYM,
+            solver_class=BayesianAnalyticalYM,
+            prior=prior_emissions.values,
+            prior_standard_deviation=prior_standard_deviation.values,
+            prior_temporal_correlation=prior_temporal_correlation.values,
+            prior_spatial_correlation=prior_spatial_correlation.values,
+            forward_model=footprints_subset.data,
+            measurement=measurements_subset.values,
+            measurement_covariance=measurement_covariance_subset.values,
+        )
+        posterior_emissions, posterior_std = solver()
+        posterior_emissions = xr.DataArray(
+            posterior_emissions, coords=state_coordinates
+        ).unstack()
+        posterior_std = xr.DataArray(posterior_std, coords=state_coordinates).unstack()
     inversion_result = xr.merge(
         [
             prior_emissions.unstack().rename("prior_emissions"),
@@ -305,6 +446,7 @@ def main(args):
     global target_emissions
     global output_buffer_path
     global measurement_bias_loader
+    global temporal_slice_data
 
     # load config yaml
     with args.config.open("r") as f:
@@ -312,6 +454,19 @@ def main(args):
     n_processes = 1
     if "n_processes" in config:
         n_processes = config["n_processes"]
+
+    if "temporal_slice_data_path" in config:
+        temporal_slice_data = xr.open_dataset(config["temporal_slice_data_path"])
+        logger.info(
+            f"Running with temporal slice data from {config['temporal_slice_data_path']}."
+        )
+
+    if "start_index" in config:
+        start_index = config["start_index"]
+        logger.info(f"Starting from permutation {start_index}")
+    else:
+        start_index = 0
+
     # build paths for the inversion and setup directories
     output_dir = Path(config["output_dir"])
     output_name = config["output_name"]
@@ -385,9 +540,12 @@ def main(args):
 
     with Pool(n_processes) as pool:
         # start  processes with tqdm
-        with tqdm(total=len(mplace_value_permutations), smoothing=0) as pbar:
+        with tqdm(
+            total=len(mplace_value_permutations) - start_index, smoothing=0
+        ) as pbar:
             for _ in pool.imap_unordered(
-                _run_inversion_ym_with_globals, range(len(mplace_value_permutations))
+                _run_inversion_ym_with_globals,
+                range(start_index, len(mplace_value_permutations)),
             ):
                 pbar.update()
 
@@ -406,12 +564,29 @@ def main(args):
                 zarr_format=2,
                 append_dim="permutation",
             )
-
     # Delete the buffer files
     for file in output_buffer_path.glob("permutation_*.nc"):
         file.unlink()
 
     output_buffer_path.rmdir()
+
+    # If save measurements is set, save the measurements and the standard deviations
+    if "save_concentrations" in config and config["save_concentrations"]:
+        measurement_save_name = (
+            output_dir / f"{output_name.split('.')[0]}_measurements.nc"
+        )
+        measurement_dataset = xr.Dataset(
+            {
+                "measurements": measurements,
+                "measurement_stds": xr.DataArray(
+                    np.diag(measurement_covariance.values) ** 0.5,
+                    coords=measurements.coords,
+                ),
+            },
+        ).unstack()
+        logger.info(f"Saving measurements to {measurement_save_name}")
+        measurement_dataset.to_netcdf(measurement_save_name)
+    logger.success("OSSE complete")
 
 
 if __name__ == "__main__":
