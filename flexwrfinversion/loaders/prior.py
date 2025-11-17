@@ -96,6 +96,34 @@ class FlatPrior(PriorLoader):
         )
 
 
+class PriorIsTarget(PriorLoader):
+    """Class to build a prior from the target data."""
+
+    def __init__(self, target_loader: TargetLoader):
+        """Prior that is the same as the target data.
+
+        Args:
+            target_loader (TargetLoader): Target loader used in the inversions
+        """
+        super().__init__(target_loader)
+        self._prior = None
+
+    @property
+    def prior(self) -> xr.DataArray:
+        if self._prior is None:
+            self._prior = self.target_loader.target.compute()
+        return self._prior
+
+    def load_timeframe(
+        self, start_time: np.datetime64, end_time: np.datetime64
+    ) -> xr.DataArray:
+        return (
+            self.prior.unstack()
+            .sel(Time=slice(start_time, end_time))
+            .stack(state=self.target_loader.STATE_DIMS)
+        )
+
+
 class FlexiblePriorLoaderTotal_ShiftToBiospheric(PriorLoader):
     def __init__(
         self,

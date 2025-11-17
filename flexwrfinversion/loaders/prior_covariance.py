@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import xarray as xr
+from loguru import logger
 
 from flexwrfinversion.loaders.prior import (
     FlexiblePriorLoaderTotal_ShiftToBiospheric,
@@ -31,7 +32,8 @@ class PriorCovarianceLoader(ABC):
     @abstractmethod
     def __init__(self, prior_loader: PriorLoader, *args, **kwargs):
         self.prior_loader = prior_loader
-        self.spatial_correlation_path = None
+        self._spatial_correlation_path = None
+        self._temporal_correlation_path = None
         self._sector_correlation = None
         self._spatial_correlation = None
         self._temporal_correlation = None
@@ -103,14 +105,26 @@ class PriorCovarianceLoader(ABC):
             xr.DataArray: Temporal correlation matrix.
         """
         if self._temporal_correlation is None:
-            time_values = self.prior_loader.prior.unstack().Time.values
-        return xr.DataArray(
-            np.eye(
-                len(time_values),
-                dtype=self.prior_loader.prior.dtype,
-            ),
-            coords=[("Time0", time_values), ("Time1", time_values)],
-        )
+            if self._temporal_correlation_path is None:
+                time_values = self.prior_loader.prior.unstack().Time.values
+                self._temporal_correlation = xr.DataArray(
+                    np.eye(
+                        len(time_values),
+                        dtype=self.prior_loader.prior.dtype,
+                    ),
+                    coords=[("Time0", time_values), ("Time1", time_values)],
+                )
+            else:
+                logger.info(
+                    f"Loading temporal correlation from {self._temporal_correlation_path}"
+                )
+                self._temporal_correlation = xr.open_dataarray(
+                    self._temporal_correlation_path
+                ).compute()
+                self._temporal_correlation = self._temporal_correlation.sortby(
+                    "Time0"
+                ).sortby("Time1")
+        return self._temporal_correlation
 
     @property
     def sector_correlation(self) -> xr.DataArray:
@@ -187,6 +201,7 @@ class RelativeError(PriorCovarianceLoader):
         self,
         prior_loader: FlexiblePriorLoaderTotal_ShiftToBiospheric,
         spatial_correlation_path: str | Path = None,
+        temporal_correlation_path: str | Path = None,
         relative_error: float = 1,
     ):
         """Prior covariance loader with standard deviation that is given as relative
@@ -197,11 +212,14 @@ class RelativeError(PriorCovarianceLoader):
                  in the Inversion.
             spatial_correlation_path (str | Path, optional): Path to file with spatial
                  correlations. Defaults to None.
+            temporal_correlation_path (str | Path, optional): Path to file with temporal
+                 correlations. Defaults to None.
             relative_error (float, optional): Relative error to use. `1` corresponds.
                  to a 100% error. Defaults to 1.
         """
         super().__init__(prior_loader)
         self._spatial_correlation_path = spatial_correlation_path
+        self._temporal_correlation_path = temporal_correlation_path
         self._relative_error = relative_error
         self._prior_std = None
 
@@ -218,17 +236,23 @@ class TargetAsError(PriorCovarianceLoader):
         prior_loader: PriorLoader,
         minimum_error: float = None,
         spatial_correlation_path: str | Path = None,
+        temporal_correlation_path: str | Path = None,
     ):
         """Use target values as std for the covariance. Cannot use correlation.
 
         Args:
             prior_loader (PriorLoader): Prior loader of the inversion.
             minimum_error (float, optional): Minimal error to allow. Defaults to None.
+            spatial_correlation_path (str | Path, optional): Path to the spatial
+                correlation to be used. Defaults to None.
+            temporal_correlation_path (str | Path, optional): Path to the temporal
+                correlation to be used. Defaults to None.
         """
         super().__init__(prior_loader)
         self._prior_std = None
         self._minimum_error = minimum_error
         self._spatial_correlation_path = spatial_correlation_path
+        self._temporal_correlation_path = temporal_correlation_path
 
     @property
     def prior_std(self) -> xr.DataArray:
@@ -274,6 +298,7 @@ class TargetAsErrorWithCO_Correlation(PriorCovarianceLoader):
         prior_loader: PriorLoader,
         anth_co_correlation: float = 0,
         spatial_correlation_path: str | Path = None,
+        temporal_correlation_path: str | Path = None,
         co2_minimum_error: float = None,
         co_minimum_error: float = None,
         ant_sector_key: str = "CO2_ANT_TOTAL",
@@ -289,6 +314,8 @@ class TargetAsErrorWithCO_Correlation(PriorCovarianceLoader):
                  and CO emissions. Defaults to 0.
             spatial_correlation_path (str | Path, optional): Path to the spatial
                  correlation to be used. Defaults to None.
+            temporal_correlation_path (str | Path, optional): Path to the temporal
+                 correlation to be used. Defaults to None.
             co2_minimum_error (float, optional): Minimum error for CO2. Defaults to None.
             co_minimum_error (float, optional): Minimum error for CO. Defaults to None.
             ant_sector_key (str, optional): Sector key for anthropogenic CO2. Defaults
@@ -300,6 +327,7 @@ class TargetAsErrorWithCO_Correlation(PriorCovarianceLoader):
         super().__init__(prior_loader)
         self._anth_co_correlation = anth_co_correlation
         self._spatial_correlation_path = spatial_correlation_path
+        self._temporal_correlation_path = temporal_correlation_path
         self._co2_minimum_error = co2_minimum_error
         self._co_minimum_error = co_minimum_error
         self.ant_sector_key = ant_sector_key
@@ -404,6 +432,54 @@ class DifferenceOfPriorToTargetWithCO_Correlation(TargetAsErrorWithCO_Correlatio
                     )
                     & (self._prior_std < self._co_minimum_error),
                     self._co_minimum_error,
+                    self._prior_std,
+                )
+        return self._prior_std
+
+
+class DifferenceOfPriorToTargetMinimumFromFile(PriorCovarianceLoader):
+    def __init__(
+        self,
+        prior_loader: PriorLoader,
+        minimum_error_file: str | Path = None,
+        spatial_correlation_path: str | Path = None,
+        temporal_correlation_path: str | Path = None,
+    ):
+        """Use target values as std for the covariance. Cannot use correlation.
+
+        Args:
+            prior_loader (PriorLoader): Prior loader of the inversion.
+            minimum_error (float, optional): Minimal error to allow. Defaults to None.
+            spatial_correlation_path (str | Path, optional): Path to the spatial
+                correlation to be used. Defaults to None.
+            temporal_correlation_path (str | Path, optional): Path to the temporal
+                correlation to be used. Defaults to None.
+        """
+        super().__init__(prior_loader)
+        self._prior_std = None
+        self._minimum_error = None
+        self._minimum_error_file = minimum_error_file
+        self._spatial_correlation_path = spatial_correlation_path
+        self._temporal_correlation_path = temporal_correlation_path
+
+    @property
+    def minimum_error(self) -> xr.DataArray:
+        if self._minimum_error is None and self._minimum_error_file is not None:
+            self._minimum_error = xr.load_dataarray(self._minimum_error_file).stack(
+                state=self.prior_loader.target_loader.STATE_DIMS
+            )
+        return self._minimum_error
+
+    @property
+    def prior_std(self) -> xr.DataArray:
+        if self._prior_std is None:
+            self._prior_std = np.abs(
+                self.prior_loader.prior - self.prior_loader.target_loader.target
+            )
+            if self.minimum_error is not None:
+                self._prior_std = xr.where(
+                    self._prior_std < self.minimum_error,
+                    self.minimum_error,
                     self._prior_std,
                 )
         return self._prior_std

@@ -44,7 +44,7 @@ from pyinverse.loss import Bayesian, BayesianYM
 from pyinverse.solver import BayesianAnalytical, BayesianAnalyticalYM
 from tqdm.auto import tqdm
 
-# flake8: noqa
+# flake8: noqa: F401
 from flexwrfinversion.loaders.footprint import (
     FlexibleFootprintLoaderAnthBio,
     FlexibleFootprintLoaderAnthBioCo,
@@ -55,21 +55,27 @@ from flexwrfinversion.loaders.measurement import (
     FlexibleMeasurementLoaderTotal,
     FlexibleMeasurementLoaderTotalCo,
     MeasurementLoader,
+    MeasurementLoaderFromSingleFileTotal,
 )
 from flexwrfinversion.loaders.measurement_covariance import (
     ConstantNoCorrelation,
     ConstantNoCorrelationCO,
+    ConstantPlusRelativeNoCorrelation,
+    FromFileNoCorrelation,
+    FromFileNoCorrelationCO,
     MeasurementCovarianceLoader,
 )
 from flexwrfinversion.loaders.prior import (
     FlatPrior,
     FlexiblePriorLoaderTotal_ShiftToBiospheric,
+    PriorIsTarget,
     PriorLoader,
     PriorLoaderAnthBio_RelativeError_PointExtra,
     PriorLoaderAnthBioCo_RelativeError_PointExtra,
 )
 from flexwrfinversion.loaders.prior_covariance import (
     DifferenceOfPriorToTarget,
+    DifferenceOfPriorToTargetMinimumFromFile,
     DifferenceOfPriorToTargetWithCO_Correlation,
     PriorCovarianceLoader,
     RelativeError,
@@ -85,7 +91,6 @@ from flexwrfinversion.loaders.target import (
     TargetLoader,
 )
 
-# flake8: noqa
 TIME_BUFFER_FOR_INVERSION_WINDOW = np.timedelta64(30, "h")
 
 
@@ -170,7 +175,7 @@ def _select_sites(
 
     Args:
         measurements (xr.DataArray): Measurements to select sites from.
-        measurement_covariance (xr.DataArray): Measurement covariance to select sites from.
+        measurement_covariance (xr.DataArray): Measurement covariance to select sites from
         footprint (xr.DataArray): Footprint to select sites from.
         sites (np.ndarray): Sites to select.
 

@@ -168,3 +168,118 @@ class ConstantNoCorrelationCO(MeasurementCovarianceLoader):
             .astype(FLOAT_PRECISION)
             .compute()
         )
+
+
+class FromFileNoCorrelation(MeasurementCovarianceLoader):
+    def __init__(
+        self,
+        measurement_loader: MeasurementLoader,
+        std_file: str,
+        ppm_error: float = 0,
+        add_quadratic: bool = True,
+    ):
+        """Covariance loader for measurements with constant standard deviation and no
+        correlation.
+
+        Args:
+            measurement_loader (MeasurementLoader): Measurement loader used in
+                 inversion.
+            std_file (str): Path to file with standard deviations.
+            ppm_error (float): Error to apply to each measurment in ppm.
+            add_quadratic (bool): Add additional errors quardatically or not.
+        """
+        super().__init__(measurement_loader)
+        self._std_file = std_file
+        self._ppm_error = ppm_error
+        self._add_quadratic = add_quadratic
+        self._std = None
+
+    @property
+    def std(self):
+        if self._std is None:
+            self._std = xr.open_dataarray(self._std_file).stack(
+                measurement=self.measurement_loader.footprint_loader.MEASUREMENT_DIMS
+            )
+            if self._ppm_error != 0:
+                if self._add_quadratic:
+                    self._std = np.sqrt(self._std**2 + self._ppm_error**2 * 1e-12)
+                else:
+                    self._std += self._ppm_error * 1e-6
+        return self._std
+
+    def load_timeframe(
+        self, start_time: np.datetime64, end_time: np.datetime64
+    ) -> xr.DataArray:
+        measurement_subset = self.measurement_loader.measurements.unstack().sel(
+            MTime=slice(start_time, end_time)
+        )
+        selection = dict(
+            MTime=measurement_subset.MTime.values,
+            MPlace=measurement_subset.MPlace.values,
+        )
+        if "species" in measurement_subset.dims:
+            selection["species"] = measurement_subset.species.values
+
+        std_subset = (
+            self.std.unstack()
+            .sel(**selection)
+            .stack(
+                measurement=self.measurement_loader.footprint_loader.MEASUREMENT_DIMS
+            )
+        )
+        return (
+            (
+                xr.zeros_like(self._to_two_dimensions(std_subset))
+                + np.diag(std_subset.data**2)
+            )
+            .astype(FLOAT_PRECISION)
+            .compute()
+        )
+
+
+class FromFileNoCorrelationCO(FromFileNoCorrelation):
+    def __init__(
+        self,
+        measurement_loader: MeasurementLoader,
+        std_file: str,
+        ppm_error: float = 0,
+        ppb_error: float = 0,
+        add_quadratic: bool = True,
+    ):
+        """Covariance loader for measurements with constant standard deviation and no
+        correlation.
+
+        Args:
+            measurement_loader (MeasurementLoader): Measurement loader used in
+                 inversion.
+            std_file (str): Path to file with standard deviations.
+            ppm_error (float): Error to apply to each measurment in ppm.
+            ppb_error (float): Error to apply to each measurment in ppb.
+            add_quadratic (bool): Add additional errors quardatically or not.
+        """
+        super().__init__(measurement_loader, std_file, ppm_error, add_quadratic)
+        self._ppb_error = ppb_error
+
+    @property
+    def std(self):
+        if self._std is None:
+            self._std = xr.open_dataarray(self._std_file).stack(
+                measurement=self.measurement_loader.footprint_loader.MEASUREMENT_DIMS
+            )
+            if self._ppm_error != 0:
+                self._std = xr.where(
+                    self._std.species == "CO2",
+                    (self._std + self._ppm_error * 1e-6)
+                    if not self._add_quadratic
+                    else np.sqrt(self._std**2 + self._ppm_error**2 * 1e-12),
+                    self._std,
+                )
+            if self._ppb_error != 0:
+                self._std = xr.where(
+                    self._std.species == "CO",
+                    (self._std + self._ppb_error * 1e-9)
+                    if not self._add_quadratic
+                    else np.sqrt(self._std**2 + self._ppb_error**2 * 1e-18),
+                    self._std,
+                )
+        return self._std

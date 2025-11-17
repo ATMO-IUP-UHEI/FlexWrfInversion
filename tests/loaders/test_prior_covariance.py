@@ -240,3 +240,35 @@ class Test_DifferenceOfPriorToTargetWithCO_Correlation:
                 - difference_of_prior_to_target_with_co_correlation.prior_loader.target_loader.target  # noqa
             )
         ).all()
+
+
+class Test_DifferenceOfPriorToTargetMinimumFromFile:
+    def test_prior_std(self, difference_of_prior_to_target_minimum_from_file):
+        prior_std = difference_of_prior_to_target_minimum_from_file.prior_std
+        target = (
+            difference_of_prior_to_target_minimum_from_file.prior_loader.target_loader.target  # noqa
+        )
+        prior = difference_of_prior_to_target_minimum_from_file.prior_loader.prior
+        abs_diff = np.abs(prior - target)
+        assert prior_std is not None
+        assert isinstance(prior_std, xr.DataArray)
+        assert len(prior_std.dims) == 1
+        assert (prior_std >= 0).all()
+        assert (prior_std >= abs_diff.mean()).all()
+        assert prior_std.min() == abs_diff.mean()
+        assert prior_std.dims == target.dims
+        assert prior_std.shape == target.shape
+
+    def test_minimum_error(self, difference_of_prior_to_target_minimum_from_file):
+        minimum_error = difference_of_prior_to_target_minimum_from_file.minimum_error
+        target = (
+            difference_of_prior_to_target_minimum_from_file.prior_loader.target_loader.target  # noqa
+        )
+        prior = difference_of_prior_to_target_minimum_from_file.prior_loader.prior
+        abs_diff = np.abs(prior - target)
+
+        assert minimum_error is not None
+        assert isinstance(minimum_error, xr.DataArray)
+        assert (minimum_error == abs_diff.mean()).all()
+        assert minimum_error.dims == target.dims
+        assert minimum_error.shape == target.shape
