@@ -1,7 +1,10 @@
 import numpy as np
 import xarray as xr
 
-from flexwrfinversion.loaders.measurement import MeasurementLoaderFromSingleFileTotal
+from flexwrfinversion.loaders.measurement import (
+    MeasurementLoaderFromSingleFileTotal,
+    MeasurementLoaderTotalAndWeeklyCO2_ff,
+)
 
 
 class Test_FlexibleMeasurementLoaderTotal:
@@ -235,3 +238,145 @@ class Test_MeasurementLoaderFromSingleFileTotal:
                 )
             )
         ).all()
+
+
+class Test_MeasurementLoaderTotalAndWeeklyCO2_ff:
+    def test_adjust_weekly_co2_ff_measurement_coords(self):
+        weekly_co2_ff_measurements = xr.DataArray(
+            np.zeros(3),
+            dims=["measurement_id"],
+            coords={
+                "measurement_id": [0, 1, 2],
+                "MTime": (
+                    "measurement_id",
+                    [
+                        np.datetime64("2024-01-01T00:00:00"),
+                        np.datetime64("2024-01-08T00:00:00"),
+                        np.datetime64("2024-01-15T00:00:00"),
+                    ],
+                ),
+            },
+        )
+        adjusted_measurements = MeasurementLoaderTotalAndWeeklyCO2_ff._adjust_weekly_co2_ff_measurement_coords(  # noqa: E501
+            weekly_co2_ff_measurements,
+            start_measurement_id=100,
+            mplace_name=MeasurementLoaderTotalAndWeeklyCO2_ff.CO2_FF_MPLACE_NAME,
+        )
+        # test if the measurement_id is gone
+        # test if MTime is now a coordinate and not an index
+        # test if MPlace coordinate is added with the correct name and is not an index
+        assert "measurement_id" not in adjusted_measurements.coords
+        assert "MTime" in adjusted_measurements.coords
+        assert "MPlace" in adjusted_measurements.coords
+        assert (
+            adjusted_measurements.MPlace.values[0]
+            == MeasurementLoaderTotalAndWeeklyCO2_ff.CO2_FF_MPLACE_NAME.encode()
+        )
+        assert adjusted_measurements.MTime.values[0] == np.datetime64(
+            "2024-01-01T00:00:00"
+        )
+        assert adjusted_measurements.MTime.values[1] == np.datetime64(
+            "2024-01-08T00:00:00"
+        )
+        assert adjusted_measurements.MTime.values[2] == np.datetime64(
+            "2024-01-15T00:00:00"
+        )
+
+        # check if measurement is the index coordinate
+        assert "measurement" in adjusted_measurements.indexes
+        assert "MTime" not in adjusted_measurements.indexes
+        assert "MPlace" not in adjusted_measurements.indexes
+
+    def test_adjust_total_measurement_coords(self):
+        mtimes = [
+            np.datetime64("2024-01-01T00:00:00"),
+            np.datetime64("2024-01-02T00:00:00"),
+            np.datetime64("2024-01-03T00:00:00"),
+        ]
+        mplaces = [b"site00", b"site01", b"site02"]
+        total_measurements = xr.DataArray(
+            np.zeros((3, 3)),
+            dims=["MTime", "MPlace"],
+            coords={
+                "MTime": mtimes,
+                "MPlace": mplaces,
+            },
+        )
+        total_measurements = total_measurements.stack(measurement=["MTime", "MPlace"])
+        adjusted_measurements = (
+            MeasurementLoaderTotalAndWeeklyCO2_ff._adjust_total_measurement_coords(
+                total_measurements
+            )
+        )
+        # test if the measurement_id is gone
+        # test if MTime and MPlace are now coordinates and not indexes
+        assert "MTime" in adjusted_measurements.coords
+        assert "MPlace" in adjusted_measurements.coords
+        # check expected coordinate values
+        assert set(adjusted_measurements.MTime.values) == set(mtimes)
+        assert set(adjusted_measurements.MPlace.values) == set(mplaces)
+        assert np.array_equal(
+            adjusted_measurements.MTime.values,
+            np.concatenate([[mtime] * 3 for mtime in mtimes]),
+        )
+        assert np.array_equal(
+            adjusted_measurements.MPlace.values, np.concatenate([mplaces] * 3)
+        )
+        # check if measurement is the index coordinate
+        assert "measurement" in adjusted_measurements.indexes
+        assert "MTime" not in adjusted_measurements.indexes
+        assert "MPlace" not in adjusted_measurements.indexes
+
+    def test_measurements(
+        self,
+        measurement_loader_total_and_weekly_co2_ff: MeasurementLoaderTotalAndWeeklyCO2_ff,
+    ):
+        measurements = measurement_loader_total_and_weekly_co2_ff.measurements
+        original_total_measurements = (
+            xr.open_dataset(
+                measurement_loader_total_and_weekly_co2_ff._measurement_file_city
+            )
+            + xr.open_dataset(
+                measurement_loader_total_and_weekly_co2_ff._measurement_file_germany
+            )
+        ).CO2_TOTAL
+        original_co2_ff_measurements = xr.open_dataset(
+            measurement_loader_total_and_weekly_co2_ff._measurement_file_weekly_co2_ff
+        ).CO2_FF
+
+        assert measurements is not None
+        assert isinstance(measurements, xr.DataArray)
+        assert len(measurements.dims) == 1
+        assert set(measurements.dims) == {"measurement"}
+        # test if the combined measurements have the correct coordinates
+        assert set(measurements.MTime.values) == set(
+            original_total_measurements.MTime.values
+        ) | set(original_co2_ff_measurements.MTime.values)
+        assert set(measurements.MPlace.values) == set(
+            original_total_measurements.MPlace.values
+        ) | {MeasurementLoaderTotalAndWeeklyCO2_ff.CO2_FF_MPLACE_NAME.encode()}
+        # check for a few values if they are findable with the coordinates of the original
+        mtime = original_total_measurements.MTime.values[6]
+        mplace = original_total_measurements.MPlace.values[2]
+        assert np.isclose(
+            measurements.sel(
+                measurement=(measurements.MTime == mtime)
+                & (measurements.MPlace == mplace)
+            ).item(),
+            original_total_measurements.sel(MTime=mtime, MPlace=mplace).item(),
+            atol=0,
+            rtol=1e-6,
+        )
+        mtime = original_co2_ff_measurements.MTime.values[1]
+        mplace = MeasurementLoaderTotalAndWeeklyCO2_ff.CO2_FF_MPLACE_NAME
+        assert np.isclose(
+            measurements.sel(
+                measurement=(measurements.MTime == mtime)
+                & (measurements.MPlace == mplace.encode())
+            ).item(),
+            original_co2_ff_measurements.sel(
+                measurement_id=original_co2_ff_measurements.MTime == mtime
+            ).item(),
+            atol=0,
+            rtol=1e-6,
+        )

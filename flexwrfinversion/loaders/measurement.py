@@ -421,3 +421,150 @@ class MeasurementLoaderFromSingleFileTotal(MeasurementLoader):
                 scale=self._ppm_noise * 1e-6, size=time_frame_measurements.shape
             )
         return time_frame_measurements
+
+
+class MeasurementLoaderTotalAndWeeklyCO2_ff(FlexibleMeasurementLoaderTotal):
+    """Measurement loader that contains the total CO2 and the weekly integrated CO2_ff
+    data e.g. from 14C measurements.
+    """
+
+    CO2_FF_MPLACE_NAME = "weekly_co2_ff"
+
+    def __init__(
+        self,
+        target_loader: FlexibleTargetLoaderTotal,
+        footprint_loader: FlexibleFootprintLoaderTotal,
+        measurement_file_city: str | Path,
+        measurement_file_germany: str | Path,
+        measurement_file_weekly_co2_ff: str | Path,
+        leave_out: list[str] = None,
+        keep_only: list[str] = None,
+        times_of_day: list[int] = None,
+        ppm_noise: float = None,
+        total_sector_key: str = "CO2_TOTAL",
+        weekly_co2_ff_sector_key: str = "CO2_FF",
+    ):
+        """Measurement loader that contains the total CO2 and the weekly integrated CO2_ff
+        data e.g. from 14C measurements.
+
+        Args:
+            target_loader (FlexibleTargetLoaderTotal): Target loader used in the
+                 inversion.
+            footprint_loader (FlexibleFootprintLoaderTotal): Footprint loader used in the
+                 inversion.
+            measurement_file_city (str | Path): Measurement/concentration file for the
+                 city that contains the `CO2_TOTAL` field.
+            measurement_file_germany (str | Path): Measurement/concentration file for
+                 Germany.
+            measurement_file_weekly_co2_ff (str | Path): Measurement/concentration file
+                 for the weekly integrated CO2_ff data. Expects a field with the weekly
+                 integrated CO2_ff data with dimension `measurement_id` and a coordinate
+                 containing time information in the dimension "MTime". Exects data
+                 variable specified in `weekly_co2_ff_sector_key`.
+            leave_out (list[str], optional): List of measurement IDs to exclude.
+                 Defaults to None.
+            keep_only (list[str], optional): List of measurement IDs to include.
+                 Defaults to None.
+            times_of_day (list[int], optional): List of times of day to include.
+                 Defaults to None.
+            ppm_noise (float, optional): Standard deviation of the noise to be added to
+                 the measurements in parts per million (ppm). Defaults to None.
+            total_sector_key (str, optional): The key for the total CO2 sector. Defaults
+                 to "CO2_TOTAL".
+            weekly_co2_ff_sector_key (str, optional): The key for the weekly integrated
+                 CO2_ff sector. Defaults to "CO2_FF".
+        """
+        super().__init__(
+            target_loader,
+            footprint_loader,
+            measurement_file_city,
+            measurement_file_germany,
+            leave_out,
+            keep_only,
+            times_of_day,
+            ppm_noise,
+            total_sector_key,
+        )
+        self._measurement_file_weekly_co2_ff = measurement_file_weekly_co2_ff
+        self.weekly_co2_ff_sector_key = weekly_co2_ff_sector_key
+        self._combined_measurements = None
+
+    @staticmethod
+    def _adjust_total_measurement_coords(total_measurements: xr.DataArray):
+        """Adjust the coordinates of the total measurements to be able to combine them
+        with the weekly CO2_ff measurements.
+
+        Args:
+            total_measurements (xr.DataArray): Total CO2 measurements.
+
+        Returns:
+            xr.DataArray: Total CO2 measurements with adjusted coordinates.
+        """
+        new_measurement_coords = np.arange(total_measurements.measurement.size)
+        mtimes = total_measurements.MTime.values
+        mplaces = total_measurements.MPlace.values
+        return total_measurements.assign_coords(
+            measurement=new_measurement_coords,
+            MTime=("measurement", mtimes),
+            MPlace=("measurement", mplaces),
+        )
+
+    @staticmethod
+    def _adjust_weekly_co2_ff_measurement_coords(
+        weekly_co2_ff_measurements: xr.DataArray,
+        start_measurement_id: int,
+        mplace_name: str,
+    ):
+        """Adjust the coordinates of the weekly CO2_ff measurements to be able to combine
+        them with the total measurements.
+
+        Args:
+            weekly_co2_ff_measurements (xr.DataArray): Weekly integrated CO2_ff
+                 measurements.
+            start_measurement_id (int): The starting measurement ID for the weekly CO2_ff
+                 measurements. Should be equal to the number of total measurements.
+            mplace_name (str): The name to assign to the MPlace coordinate for the weekly
+                 CO2_ff measurements.
+        Returns:
+            xr.DataArray: Weekly integrated CO2_ff measurements with adjusted coordinates.
+        """
+        new_measurement_coords = (
+            np.arange(weekly_co2_ff_measurements.measurement_id.size)
+            + start_measurement_id
+        )
+        mpalce_values = np.char.encode(
+            np.array(
+                [mplace_name] * weekly_co2_ff_measurements.measurement_id.size,
+                dtype="str",
+            )
+        )
+        return weekly_co2_ff_measurements.rename(
+            measurement_id="measurement"
+        ).assign_coords(
+            measurement=new_measurement_coords,
+            # Mplace as coordinate for measurement but not a s index coordinate
+            MPlace=("measurement", mpalce_values),
+        )
+
+    @property
+    def measurements(self):
+        if self._combined_measurements is None:
+            total_measurements = self._adjust_total_measurement_coords(
+                super().measurements
+            )
+            weekly_co2_ff_measurements = self._adjust_weekly_co2_ff_measurement_coords(
+                xr.open_dataset(self._measurement_file_weekly_co2_ff)[
+                    self.weekly_co2_ff_sector_key
+                ],
+                start_measurement_id=total_measurements.measurement.size,
+                mplace_name=self.CO2_FF_MPLACE_NAME,
+            )
+            self._combined_measurements = (
+                xr.concat(
+                    [total_measurements, weekly_co2_ff_measurements],
+                    dim="measurement",
+                )
+                .astype(FLOAT_PRECISION)
+                .compute()
+            )
+        return self._combined_measurements

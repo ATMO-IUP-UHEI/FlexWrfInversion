@@ -13,6 +13,7 @@ from flexwrfinversion.loaders.footprint import (
 from flexwrfinversion.loaders.measurement import (
     FlexibleMeasurementLoaderTotal,
     FlexibleMeasurementLoaderTotalCo,
+    MeasurementLoaderTotalAndWeeklyCO2_ff,
 )
 from flexwrfinversion.loaders.prior import (
     FlatPrior,
@@ -36,6 +37,7 @@ from flexwrfinversion.loaders.target import (
 
 EXAMPLE_DIRECTORY_0 = Path(__file__).parent / "data" / "example_directory_0"
 EXAMPLE_DIRECTORY_1 = Path(__file__).parent / "data" / "example_directory_1"
+EXAMPLE_DIRECTORY_2 = Path(__file__).parent / "data" / "example_directory_2"
 EXAMPLE_CONFIG_DIR = Path(__file__).parent / "configs"
 
 
@@ -714,4 +716,26 @@ def flexible_measurement_loader_total_co_noise(
         / "true_concentrations_vprm_co.nc",
         ppm_noise=2,
         ppb_noise=2,
+    )
+
+
+@pytest.fixture
+def measurement_loader_total_and_weekly_co2_ff(
+    flexible_target_loader_total, flexible_footprint_loader_total
+):
+    return MeasurementLoaderTotalAndWeeklyCO2_ff(
+        target_loader=flexible_target_loader_total,
+        footprint_loader=flexible_footprint_loader_total,
+        measurement_file_city=EXAMPLE_DIRECTORY_2
+        / "remapped_data"
+        / "city"
+        / "total_measurements.nc",
+        measurement_file_germany=EXAMPLE_DIRECTORY_2
+        / "remapped_data"
+        / "germany"
+        / "total_measurements.nc",
+        measurement_file_weekly_co2_ff=EXAMPLE_DIRECTORY_2
+        / "remapped_data"
+        / "city"
+        / "weekly_co2_ff_measurements.nc",
     )
