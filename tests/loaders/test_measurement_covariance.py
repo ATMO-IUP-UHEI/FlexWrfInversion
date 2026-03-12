@@ -8,6 +8,7 @@ from flexwrfinversion.loaders.measurement_covariance import (
     ConstantPlusRelativeNoCorrelation,
     FromFileNoCorrelation,
     FromFileNoCorrelationCO,
+    FromFileNoCorrelationCO2_ff,
 )
 
 
@@ -320,3 +321,47 @@ class Test_FromFileNoCorrelationCO:
         assert covariance.MTime0.values.max() == end_mtime
         assert set(covariance.unstack().species0.values) == {"CO", "CO2"}
         assert set(covariance.dims) == {"measurement0", "measurement1"}
+
+
+class Test_FromFileNoCorrelationCO2_ff:
+    def test_std(self, from_file_no_correlation_co2_ff: FromFileNoCorrelationCO2_ff):
+        std = from_file_no_correlation_co2_ff.std
+        original_ppm_error = from_file_no_correlation_co2_ff._ppm_error * 1e-6
+        original_ppm_error_co2_ff = (
+            from_file_no_correlation_co2_ff._ppm_error_co2_ff * 1e-6
+        )
+        original_std_total = np.sqrt(
+            xr.open_dataset(from_file_no_correlation_co2_ff._std_file).CO2_TOTAL ** 2
+            + original_ppm_error**2
+        )
+        original_std_co2_ff = np.sqrt(
+            xr.open_dataset(from_file_no_correlation_co2_ff._std_file_co2_ff).CO2_FF
+            ** 2
+            + original_ppm_error_co2_ff**2
+        )
+
+        assert set(std.dims) == {"measurement"}
+        assert set(std.coords) == {"measurement", "MTime", "MPlace"}
+
+        mtime = original_std_total.MTime[3]
+        mplace = original_std_total.MPlace[4]
+        mtime_co2_ff = original_std_co2_ff.MTime[1]
+        mplace_co2_ff = (
+            from_file_no_correlation_co2_ff.measurement_loader.CO2_FF_MPLACE_NAME.encode()
+        )
+        assert np.isclose(
+            std.sel(measurement=(std.MTime == mtime) & (std.MPlace == mplace)).item(),
+            original_std_total.sel(MTime=mtime, MPlace=mplace).item(),
+            atol=0,
+            rtol=1e-6,
+        )
+        assert np.isclose(
+            std.sel(
+                measurement=(std.MTime == mtime_co2_ff) & (std.MPlace == mplace_co2_ff)
+            ).item(),
+            original_std_co2_ff.sel(
+                measurement_id=original_std_co2_ff.MTime == mtime_co2_ff
+            ).item(),
+            atol=0,
+            rtol=1e-6,
+        )

@@ -15,6 +15,7 @@ from flexwrfinversion.loaders.measurement import (
     FlexibleMeasurementLoaderTotalCo,
     MeasurementLoaderTotalAndWeeklyCO2_ff,
 )
+from flexwrfinversion.loaders.measurement_covariance import FromFileNoCorrelationCO2_ff
 from flexwrfinversion.loaders.prior import (
     FlatPrior,
     FlexiblePriorLoaderTotal_ShiftToBiospheric,
@@ -738,4 +739,22 @@ def measurement_loader_total_and_weekly_co2_ff(
         / "remapped_data"
         / "city"
         / "weekly_co2_ff_measurements.nc",
+    )
+
+
+@pytest.fixture
+def from_file_no_correlation_co2_ff(measurement_loader_total_and_weekly_co2_ff):
+    return FromFileNoCorrelationCO2_ff(
+        measurement_loader=measurement_loader_total_and_weekly_co2_ff,
+        std_file=EXAMPLE_DIRECTORY_2
+        / "remapped_data"
+        / "city"
+        / "total_measurements_std.nc",
+        std_file_co2_ff=EXAMPLE_DIRECTORY_2
+        / "remapped_data"
+        / "city"
+        / "weekly_co2_ff_measurements_std.nc",
+        ppm_error=2,
+        ppm_error_co2_ff=4,
+        add_quadratic=True,
     )

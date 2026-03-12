@@ -6,7 +6,10 @@ from abc import ABC, abstractmethod
 import numpy as np
 import xarray as xr
 
-from flexwrfinversion.loaders.measurement import MeasurementLoader
+from flexwrfinversion.loaders.measurement import (
+    MeasurementLoader,
+    MeasurementLoaderTotalAndWeeklyCO2_ff,
+)
 
 FLOAT_PRECISION = np.float32
 
@@ -259,6 +262,7 @@ class FromFileNoCorrelationCO(FromFileNoCorrelation):
         """
         super().__init__(measurement_loader, std_file, ppm_error, add_quadratic)
         self._ppb_error = ppb_error
+        self._combined_std = None
 
     @property
     def std(self):
@@ -283,3 +287,65 @@ class FromFileNoCorrelationCO(FromFileNoCorrelation):
                     self._std,
                 )
         return self._std
+
+
+class FromFileNoCorrelationCO2_ff(FromFileNoCorrelation):
+    def __init__(
+        self,
+        measurement_loader: MeasurementLoaderTotalAndWeeklyCO2_ff,
+        std_file: str,
+        std_file_co2_ff: str,
+        ppm_error: float = 0,
+        ppm_error_co2_ff: float = 0,
+        add_quadratic: bool = True,
+    ):
+        """Covariance loader for measurements with constant standard deviation and no
+        correlation.
+
+        Args:
+            measurement_loader (MeasurementLoader): Measurement loader used in
+                 inversion.
+            std_file (str): Path to file with standard deviations.
+            ppm_error (float): Error to apply to each measurment in ppm.
+            ppm_error_co2_ff (float): Error to apply to each CO2_ff measurement in ppm.
+            add_quadratic (bool): Add additional errors quardatically or not.
+        """
+        if not isinstance(measurement_loader, MeasurementLoaderTotalAndWeeklyCO2_ff):
+            raise ValueError(
+                "Measurement loader should be of type"
+                " MeasurementLoaderTotalAndWeeklyCO2_ff"
+            )
+        super().__init__(measurement_loader, std_file, ppm_error, add_quadratic)
+        self._std_file_co2_ff = std_file_co2_ff
+        self._ppm_error_co2_ff = ppm_error_co2_ff
+        self._combined_std = None
+
+    @property
+    def std(self):
+        if self._combined_std is None:
+            std_total = self.measurement_loader._adjust_total_measurement_coords(
+                super().std,
+            )
+            std_co2_ff = (
+                self.measurement_loader._adjust_weekly_co2_ff_measurement_coords(
+                    xr.open_dataset(self._std_file_co2_ff)[
+                        self.measurement_loader.weekly_co2_ff_sector_key
+                    ],
+                    start_measurement_id=std_total.measurement.size,
+                    mplace_name=self.measurement_loader.CO2_FF_MPLACE_NAME,
+                )
+            )
+            if self._ppm_error_co2_ff != 0:
+                if self._add_quadratic:
+                    std_co2_ff = np.sqrt(
+                        std_co2_ff**2 + self._ppm_error_co2_ff**2 * 1e-12
+                    )
+                else:
+                    std_co2_ff += self._ppm_error_co2_ff * 1e-6
+
+            self._combined_std = (
+                xr.concat([std_total, std_co2_ff], dim="measurement")
+                .astype(FLOAT_PRECISION)
+                .compute()
+            )
+        return self._combined_std
