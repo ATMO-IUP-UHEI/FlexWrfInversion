@@ -365,3 +365,51 @@ class Test_FromFileNoCorrelationCO2_ff:
             atol=0,
             rtol=1e-6,
         )
+
+    def test_load_timeframe(
+        self, from_file_no_correlation_co2_ff: FromFileNoCorrelationCO2_ff
+    ):
+        std = from_file_no_correlation_co2_ff.std
+        full_timeframe = from_file_no_correlation_co2_ff.load_timeframe(
+            std.MTime.min().values, std.MTime.max().values
+        )
+        part_timeframe = from_file_no_correlation_co2_ff.load_timeframe(
+            std.MTime.values[-2],  # first of the co2_ff measurements
+            std.MTime.values[-1] - np.timedelta64(1, "ns"),
+        )
+        assert set(full_timeframe.dims) == {"measurement0", "measurement1"}
+        assert set(full_timeframe.coords) == {
+            "measurement0",
+            "measurement1",
+            "MPlace0",
+            "MPlace1",
+            "MTime0",
+            "MTime1",
+        }
+        assert (np.diag(full_timeframe.values) == std**2).all()
+        assert std.MTime.values[-1] not in part_timeframe.MTime0.values
+        assert (
+            part_timeframe.sizes["measurement0"] == part_timeframe.sizes["measurement1"]
+        )
+        assert (
+            part_timeframe.sizes["measurement0"] < full_timeframe.sizes["measurement0"]
+        )
+        assert set(np.diag(part_timeframe.values)).issubset(
+            np.diag(full_timeframe.values)
+        )
+
+    def test_load_timeframe_consistency(
+        self, from_file_no_correlation_co2_ff: FromFileNoCorrelationCO2_ff
+    ):
+        measurement_loader = from_file_no_correlation_co2_ff.measurement_loader
+        start_mtime = measurement_loader.measurements.MTime.values[0]
+        end_mtime = measurement_loader.measurements.MTime.values[-20]
+        measurements = measurement_loader.load_timeframe(start_mtime, end_mtime)
+        covariance = from_file_no_correlation_co2_ff.load_timeframe(
+            start_mtime, end_mtime
+        )
+        for i in range(2):
+            for variable in ["MTime", "MPlace", "measurement"]:
+                assert (
+                    measurements[variable].values == covariance[f"{variable}{i}"].values
+                ).all()

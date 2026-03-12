@@ -568,3 +568,10 @@ class MeasurementLoaderTotalAndWeeklyCO2_ff(FlexibleMeasurementLoaderTotal):
                 .compute()
             )
         return self._combined_measurements
+
+    def load_timeframe(self, start_time, end_time):
+        measurement_subset = self.measurements.sel(
+            measurement=(self.measurements.MTime >= start_time)
+            * (self.measurements.MTime <= end_time)
+        )
+        return measurement_subset

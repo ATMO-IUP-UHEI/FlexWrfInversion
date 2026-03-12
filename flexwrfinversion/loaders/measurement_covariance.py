@@ -349,3 +349,24 @@ class FromFileNoCorrelationCO2_ff(FromFileNoCorrelation):
                 .compute()
             )
         return self._combined_std
+
+    def load_timeframe(
+        self, start_time: np.datetime64, end_time: np.datetime64
+    ) -> xr.DataArray:
+        """Load a timeframe of the covariance.
+
+        Args:
+            start_time (np.datetime64): Start time of the convariance timeframe
+            end_time (np.datetime64): End time of the convariance timeframe
+        Returns:
+            xr.DataArray: The covariance as 2D array. Coordinates should be stacked
+                beforehand.
+        """
+        subset_stds = self.std.sel(
+            measurement=(self.std.MTime >= start_time) * (self.std.MTime <= end_time)
+        )
+        covariance = (
+            xr.zeros_like(self._to_two_dimensions(subset_stds))
+            + np.diag(subset_stds.values) ** 2
+        )
+        return covariance

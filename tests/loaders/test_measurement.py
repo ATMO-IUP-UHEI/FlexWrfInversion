@@ -380,3 +380,53 @@ class Test_MeasurementLoaderTotalAndWeeklyCO2_ff:
             atol=0,
             rtol=1e-6,
         )
+
+    def test_load_timeframe(
+        self,
+        measurement_loader_total_and_weekly_co2_ff: MeasurementLoaderTotalAndWeeklyCO2_ff,
+    ):
+        measurements = measurement_loader_total_and_weekly_co2_ff.measurements
+        full_timeframe = measurement_loader_total_and_weekly_co2_ff.load_timeframe(
+            start_time=measurements.MTime.min(),
+            end_time=measurements.MTime.max(),
+        )
+        assert full_timeframe is not None
+        assert isinstance(full_timeframe, xr.DataArray)
+        assert len(full_timeframe.dims) == 1
+        assert set(full_timeframe.dims) == {"measurement"}
+        assert set(full_timeframe.coords) == {"measurement", "MTime", "MPlace"}
+        assert (full_timeframe.MTime == measurements.MTime).all()
+        assert (full_timeframe.MPlace == measurements.MPlace).all()
+        assert (full_timeframe.measurement == measurements.measurement).all()
+        assert (full_timeframe.values == measurements.values).all()
+
+        # test a subset of the timeframe
+        start_time = measurements.MTime.values[5]
+        end_time = measurements.MTime.values[10]
+        subset_timeframe = measurement_loader_total_and_weekly_co2_ff.load_timeframe(
+            start_time=start_time,
+            end_time=end_time,
+        )
+        assert subset_timeframe is not None
+        assert isinstance(subset_timeframe, xr.DataArray)
+        assert len(subset_timeframe.dims) == 1
+        assert set(subset_timeframe.dims) == {"measurement"}
+        assert set(subset_timeframe.coords) == {"measurement", "MTime", "MPlace"}
+        assert (subset_timeframe.MTime >= start_time).all()
+        assert (subset_timeframe.MTime <= end_time).all()
+        assert (subset_timeframe.measurement.isin(measurements.measurement)).all()
+        # check values for a few coordinates
+        mtime = measurements.MTime.values[6]
+        mplace = measurements.MPlace.values[2]
+        assert np.isclose(
+            subset_timeframe.sel(
+                measurement=(subset_timeframe.MTime == mtime)
+                & (subset_timeframe.MPlace == mplace)
+            ).item(),
+            measurements.sel(
+                measurement=(measurements.MTime == mtime)
+                & (measurements.MPlace == mplace)
+            ).item(),
+            atol=0,
+            rtol=1e-6,
+        )
