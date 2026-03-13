@@ -8,7 +8,7 @@ import xarray as xr
 
 from flexwrfinversion.loaders.measurement import (
     MeasurementLoader,
-    MeasurementLoaderTotalAndWeeklyCO2_ff,
+    MeasurementLoaderTotalAndCO2_ff,
 )
 
 FLOAT_PRECISION = np.float32
@@ -292,7 +292,7 @@ class FromFileNoCorrelationCO(FromFileNoCorrelation):
 class FromFileNoCorrelationCO2_ff(FromFileNoCorrelation):
     def __init__(
         self,
-        measurement_loader: MeasurementLoaderTotalAndWeeklyCO2_ff,
+        measurement_loader: MeasurementLoaderTotalAndCO2_ff,
         std_file: str,
         std_file_co2_ff: str,
         ppm_error: float = 0,
@@ -310,10 +310,10 @@ class FromFileNoCorrelationCO2_ff(FromFileNoCorrelation):
             ppm_error_co2_ff (float): Error to apply to each CO2_ff measurement in ppm.
             add_quadratic (bool): Add additional errors quardatically or not.
         """
-        if not isinstance(measurement_loader, MeasurementLoaderTotalAndWeeklyCO2_ff):
+        if not isinstance(measurement_loader, MeasurementLoaderTotalAndCO2_ff):
             raise ValueError(
                 "Measurement loader should be of type"
-                " MeasurementLoaderTotalAndWeeklyCO2_ff"
+                " MeasurementLoaderTotalAndCO2_ff"
             )
         super().__init__(measurement_loader, std_file, ppm_error, add_quadratic)
         self._std_file_co2_ff = std_file_co2_ff
@@ -326,14 +326,12 @@ class FromFileNoCorrelationCO2_ff(FromFileNoCorrelation):
             std_total = self.measurement_loader._adjust_total_measurement_coords(
                 super().std,
             )
-            std_co2_ff = (
-                self.measurement_loader._adjust_weekly_co2_ff_measurement_coords(
-                    xr.open_dataset(self._std_file_co2_ff)[
-                        self.measurement_loader.weekly_co2_ff_sector_key
-                    ],
-                    start_measurement_id=std_total.measurement.size,
-                    mplace_name=self.measurement_loader.CO2_FF_MPLACE_NAME,
-                )
+            std_co2_ff = self.measurement_loader._adjust_co2_ff_measurement_coords(
+                xr.open_dataset(self._std_file_co2_ff)[
+                    self.measurement_loader.co2_ff_sector_key
+                ],
+                start_measurement_id=std_total.measurement.size,
+                mplace_name=self.measurement_loader.CO2_FF_MPLACE_NAME,
             )
             if self._ppm_error_co2_ff != 0:
                 if self._add_quadratic:

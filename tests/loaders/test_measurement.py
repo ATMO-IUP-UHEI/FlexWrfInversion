@@ -3,7 +3,7 @@ import xarray as xr
 
 from flexwrfinversion.loaders.measurement import (
     MeasurementLoaderFromSingleFileTotal,
-    MeasurementLoaderTotalAndWeeklyCO2_ff,
+    MeasurementLoaderTotalAndCO2_ff,
 )
 
 
@@ -240,9 +240,9 @@ class Test_MeasurementLoaderFromSingleFileTotal:
         ).all()
 
 
-class Test_MeasurementLoaderTotalAndWeeklyCO2_ff:
-    def test_adjust_weekly_co2_ff_measurement_coords(self):
-        weekly_co2_ff_measurements = xr.DataArray(
+class Test_MeasurementLoaderTotalAndCO2_ff:
+    def test_adjust_co2_ff_measurement_coords(self):
+        co2_ff_measurements = xr.DataArray(
             np.zeros(3),
             dims=["measurement_id"],
             coords={
@@ -257,10 +257,10 @@ class Test_MeasurementLoaderTotalAndWeeklyCO2_ff:
                 ),
             },
         )
-        adjusted_measurements = MeasurementLoaderTotalAndWeeklyCO2_ff._adjust_weekly_co2_ff_measurement_coords(  # noqa: E501
-            weekly_co2_ff_measurements,
+        adjusted_measurements = MeasurementLoaderTotalAndCO2_ff._adjust_co2_ff_measurement_coords(  # noqa: E501
+            co2_ff_measurements,
             start_measurement_id=100,
-            mplace_name=MeasurementLoaderTotalAndWeeklyCO2_ff.CO2_FF_MPLACE_NAME,
+            mplace_name=MeasurementLoaderTotalAndCO2_ff.CO2_FF_MPLACE_NAME,
         )
         # test if the measurement_id is gone
         # test if MTime is now a coordinate and not an index
@@ -270,7 +270,7 @@ class Test_MeasurementLoaderTotalAndWeeklyCO2_ff:
         assert "MPlace" in adjusted_measurements.coords
         assert (
             adjusted_measurements.MPlace.values[0]
-            == MeasurementLoaderTotalAndWeeklyCO2_ff.CO2_FF_MPLACE_NAME.encode()
+            == MeasurementLoaderTotalAndCO2_ff.CO2_FF_MPLACE_NAME.encode()
         )
         assert adjusted_measurements.MTime.values[0] == np.datetime64(
             "2024-01-01T00:00:00"
@@ -304,7 +304,7 @@ class Test_MeasurementLoaderTotalAndWeeklyCO2_ff:
         )
         total_measurements = total_measurements.stack(measurement=["MTime", "MPlace"])
         adjusted_measurements = (
-            MeasurementLoaderTotalAndWeeklyCO2_ff._adjust_total_measurement_coords(
+            MeasurementLoaderTotalAndCO2_ff._adjust_total_measurement_coords(
                 total_measurements
             )
         )
@@ -329,19 +329,17 @@ class Test_MeasurementLoaderTotalAndWeeklyCO2_ff:
 
     def test_measurements(
         self,
-        measurement_loader_total_and_weekly_co2_ff: MeasurementLoaderTotalAndWeeklyCO2_ff,
+        measurement_loader_total_and_co2_ff: MeasurementLoaderTotalAndCO2_ff,
     ):
-        measurements = measurement_loader_total_and_weekly_co2_ff.measurements
+        measurements = measurement_loader_total_and_co2_ff.measurements
         original_total_measurements = (
-            xr.open_dataset(
-                measurement_loader_total_and_weekly_co2_ff._measurement_file_city
-            )
+            xr.open_dataset(measurement_loader_total_and_co2_ff._measurement_file_city)
             + xr.open_dataset(
-                measurement_loader_total_and_weekly_co2_ff._measurement_file_germany
+                measurement_loader_total_and_co2_ff._measurement_file_germany
             )
         ).CO2_TOTAL
         original_co2_ff_measurements = xr.open_dataset(
-            measurement_loader_total_and_weekly_co2_ff._measurement_file_weekly_co2_ff
+            measurement_loader_total_and_co2_ff._measurement_file_co2_ff
         ).CO2_FF
 
         assert measurements is not None
@@ -354,7 +352,7 @@ class Test_MeasurementLoaderTotalAndWeeklyCO2_ff:
         ) | set(original_co2_ff_measurements.MTime.values)
         assert set(measurements.MPlace.values) == set(
             original_total_measurements.MPlace.values
-        ) | {MeasurementLoaderTotalAndWeeklyCO2_ff.CO2_FF_MPLACE_NAME.encode()}
+        ) | {MeasurementLoaderTotalAndCO2_ff.CO2_FF_MPLACE_NAME.encode()}
         # check for a few values if they are findable with the coordinates of the original
         mtime = original_total_measurements.MTime.values[6]
         mplace = original_total_measurements.MPlace.values[2]
@@ -368,7 +366,7 @@ class Test_MeasurementLoaderTotalAndWeeklyCO2_ff:
             rtol=1e-6,
         )
         mtime = original_co2_ff_measurements.MTime.values[1]
-        mplace = MeasurementLoaderTotalAndWeeklyCO2_ff.CO2_FF_MPLACE_NAME
+        mplace = MeasurementLoaderTotalAndCO2_ff.CO2_FF_MPLACE_NAME
         assert np.isclose(
             measurements.sel(
                 measurement=(measurements.MTime == mtime)
@@ -383,10 +381,10 @@ class Test_MeasurementLoaderTotalAndWeeklyCO2_ff:
 
     def test_load_timeframe(
         self,
-        measurement_loader_total_and_weekly_co2_ff: MeasurementLoaderTotalAndWeeklyCO2_ff,
+        measurement_loader_total_and_co2_ff: MeasurementLoaderTotalAndCO2_ff,
     ):
-        measurements = measurement_loader_total_and_weekly_co2_ff.measurements
-        full_timeframe = measurement_loader_total_and_weekly_co2_ff.load_timeframe(
+        measurements = measurement_loader_total_and_co2_ff.measurements
+        full_timeframe = measurement_loader_total_and_co2_ff.load_timeframe(
             start_time=measurements.MTime.min(),
             end_time=measurements.MTime.max(),
         )
@@ -403,7 +401,7 @@ class Test_MeasurementLoaderTotalAndWeeklyCO2_ff:
         # test a subset of the timeframe
         start_time = measurements.MTime.values[5]
         end_time = measurements.MTime.values[10]
-        subset_timeframe = measurement_loader_total_and_weekly_co2_ff.load_timeframe(
+        subset_timeframe = measurement_loader_total_and_co2_ff.load_timeframe(
             start_time=start_time,
             end_time=end_time,
         )

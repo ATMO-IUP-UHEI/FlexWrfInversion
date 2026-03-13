@@ -44,14 +44,12 @@ class FootprintLoader(ABC):
             xr.Dataset: Prepared footprint data
         """
         if path.suffix == ".nc":
-            data = (
-                xr.open_dataset(
-                    path,
-                    chunks="auto",
-                )
-                .drop_dims(["x_stag", "y_stag"])
-                .fillna(0)
-            )
+            data = xr.open_dataset(
+                path,
+                chunks="auto",
+            ).fillna(0)
+            if "x_stag" in data.dims and "y_stag" in data.dims:
+                data = data.drop_dims(["x_stag", "y_stag"])
 
         elif path.suffix == ".pkl":
             with open(path, "rb") as f:
@@ -497,4 +495,148 @@ class FlexibleFootprintLoaderAnthBioCo(FootprintLoader):
         )
         if self._footprint_file_city_bio.suffix == ".pkl":
             timeframe_data.values = timeframe_data.data.todense()
+        return timeframe_data
+
+
+class FootprintLoaderTotalAndCO2_ff(FlexibleFootprintLoaderAnthBio):
+    CO2_FF_MPLACE_NAME = "co2_ff"
+
+    def __init__(
+        self,
+        footprint_file_city_bio: str | Path,
+        footprint_file_city_ant: str | Path,
+        footprint_file_germany_bio: str | Path,
+        footprint_file_germany_ant: str | Path,
+        footprint_file_city_co2_ff: str | Path,
+        footprint_file_germany_co2_ff: str | Path,
+        leave_out: list[str] = None,
+        keep_only: list[str] = None,
+        times_of_day: list[int] = None,
+        ant_sector_key: str = "CO2_ANT_TOTAL",
+        bio_sector_key: str = "E_CO2_VPRM",
+        total_sector_key: str = "CO2_TOTAL",
+        weekly_co2_ff_sector_key: str = "CO2_FF",
+    ):
+        super().__init__(
+            footprint_file_city_bio=footprint_file_city_bio,
+            footprint_file_city_ant=footprint_file_city_ant,
+            footprint_file_germany_bio=footprint_file_germany_bio,
+            footprint_file_germany_ant=footprint_file_germany_ant,
+            leave_out=leave_out,
+            keep_only=keep_only,
+            times_of_day=times_of_day,
+            ant_sector_key=ant_sector_key,
+            bio_sector_key=bio_sector_key,
+            total_sector_key=total_sector_key,
+        )
+        self._footprint_file_city_co2_ff = Path(footprint_file_city_co2_ff)
+        self._footprint_file_germany_co2_ff = Path(footprint_file_germany_co2_ff)
+        self._weekly_co2_ff_sector_key = weekly_co2_ff_sector_key
+        self._combined_footprint = None
+
+    @staticmethod
+    def _adjust_total_measurement_coords(footprint: xr.DataArray) -> xr.DataArray:
+        """Adjust coordinates of the total measurement to match the CO2 FF measurement.
+        Based on measurement class `MeasurementLoaderTotalAndCO2_ff`.
+
+        Args:
+            footprint (xr.DataArray): Footprint data containing the total CO2.
+        Returns:
+            xr.DataArray: Footprint data with adjusted coordinates for the total
+                 measurement to be compatible with the CO2 FF measurement.
+        """
+        new_measurement_coords = np.arange(footprint.measurement.size)
+        mtimes = footprint.MTime.values
+        mplaces = footprint.MPlace.values
+        return footprint.assign_coords(
+            measurement=new_measurement_coords,
+            MTime=("measurement", mtimes),
+            MPlace=("measurement", mplaces),
+        )
+
+    @staticmethod
+    def _adjust_co2_ff_measurement_coords(
+        footprint: xr.DataArray,
+        start_measurement_id: int,
+        mplace_name: str,
+    ) -> xr.DataArray:
+        """Adjust coordinates of the weekly CO2 FF measurement to be compatible with the
+        total CO2 measurement coordinates (based on measurement class
+        `MeasurementLoaderTotalAndCO2_ff`)
+
+        Args:
+            footprint (xr.DataArray): Footprint data containing the CO2 FF
+                 measurement.
+            start_measurement_id (int): Measurement ID of the first measurement in the
+                 weekly CO2 FF measurement.
+            mplace_name (str): Value assigned for the MPlace coordinate for CO2 FF
+                 measurement.
+        Returns:
+            xr.DataArray: Footprint data with adjusted coordinates for the weekly CO2 FF
+                 measurements.
+        """
+        new_measurement_coords = (
+            np.arange(footprint.measurement_id.size) + start_measurement_id
+        )
+        mpalce_values = np.char.encode(
+            np.array(
+                [mplace_name] * footprint.measurement_id.size,
+                dtype="str",
+            )
+        )
+        return footprint.rename(measurement_id="measurement").assign_coords(
+            measurement=new_measurement_coords,
+            # Mplace as coordinate for measurement but not a s index coordinate
+            MPlace=("measurement", mpalce_values),
+        )
+
+    @property
+    def footprint(self):
+        if self._combined_footprint is None:
+            total_footprint = self._adjust_total_measurement_coords(super().footprint)
+            co2_ff = self._adjust_co2_ff_measurement_coords(
+                self._combine_subsectors(
+                    self._open_and_prepare(self._footprint_file_city_co2_ff)[
+                        self._weekly_co2_ff_sector_key
+                    ],
+                    self._open_and_prepare(self._footprint_file_germany_co2_ff)[
+                        self._weekly_co2_ff_sector_key
+                    ],
+                ),
+                total_footprint.sizes["measurement"],
+                self.CO2_FF_MPLACE_NAME,
+            ).stack(state=self.STATE_DIMS)
+            self._combined_footprint = (
+                xr.concat([total_footprint, co2_ff], dim="measurement")
+                .astype(FLOAT_PRECISION)
+                .compute()
+            )
+        return self._combined_footprint
+
+    def load_timeframe(
+        self,
+        start_time: np.datetime64,
+        end_time: np.datetime64,
+        start_mtime: np.datetime64,
+        end_mtime: np.datetime64,
+    ) -> xr.DataArray:
+        """Load timeframe of the data with respect emission and measurement time.
+
+        Args:
+            start_time (np.datetime64): Start time of the emission timeframe
+            end_time (np.datetime64): End time of the emission timeframe
+            start_mtime (np.datetime64): Start time of the measurement timeframe
+            end_mtime (np.datetime64): End time of the measurement timeframe
+
+        Returns:
+            xr.DataArray: Loaded timeframe
+        """
+        timeframe_data = self.footprint.sel(
+            state=(self.footprint.Time >= start_time)
+            & (self.footprint.Time <= end_time)
+        )
+        timeframe_data = timeframe_data.sel(
+            measurement=(timeframe_data.MTime >= start_mtime)
+            & (timeframe_data.MTime <= end_mtime)
+        )
         return timeframe_data

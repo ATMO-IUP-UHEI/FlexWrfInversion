@@ -9,11 +9,12 @@ from flexwrfinversion.loaders.footprint import (
     FlexibleFootprintLoaderAnthBio,
     FlexibleFootprintLoaderAnthBioCo,
     FlexibleFootprintLoaderTotal,
+    FootprintLoaderTotalAndCO2_ff,
 )
 from flexwrfinversion.loaders.measurement import (
     FlexibleMeasurementLoaderTotal,
     FlexibleMeasurementLoaderTotalCo,
-    MeasurementLoaderTotalAndWeeklyCO2_ff,
+    MeasurementLoaderTotalAndCO2_ff,
 )
 from flexwrfinversion.loaders.measurement_covariance import FromFileNoCorrelationCO2_ff
 from flexwrfinversion.loaders.prior import (
@@ -533,6 +534,36 @@ def flexible_footprint_loader_anth_bio_co():
     )
 
 
+@pytest.fixture
+def footprint_loader_total_and_co2_ff():
+    return FootprintLoaderTotalAndCO2_ff(
+        footprint_file_city_bio=EXAMPLE_DIRECTORY_2
+        / "remapped_data"
+        / "city"
+        / "footprint_bio.nc",
+        footprint_file_city_ant=EXAMPLE_DIRECTORY_2
+        / "remapped_data"
+        / "city"
+        / "footprint_ant.nc",
+        footprint_file_germany_bio=EXAMPLE_DIRECTORY_2
+        / "remapped_data"
+        / "germany"
+        / "footprint_bio.nc",
+        footprint_file_germany_ant=EXAMPLE_DIRECTORY_2
+        / "remapped_data"
+        / "germany"
+        / "footprint_ant.nc",
+        footprint_file_city_co2_ff=EXAMPLE_DIRECTORY_2
+        / "remapped_data"
+        / "city"
+        / "footprint_co2_ff.nc",
+        footprint_file_germany_co2_ff=EXAMPLE_DIRECTORY_2
+        / "remapped_data"
+        / "germany"
+        / "footprint_co2_ff.nc",
+    )
+
+
 # %% MEASUREMENT LOADER FIXTURES
 @pytest.fixture
 def flexible_measurement_loader_total(
@@ -721,10 +752,10 @@ def flexible_measurement_loader_total_co_noise(
 
 
 @pytest.fixture
-def measurement_loader_total_and_weekly_co2_ff(
+def measurement_loader_total_and_co2_ff(
     flexible_target_loader_total, flexible_footprint_loader_total
 ):
-    return MeasurementLoaderTotalAndWeeklyCO2_ff(
+    return MeasurementLoaderTotalAndCO2_ff(
         target_loader=flexible_target_loader_total,
         footprint_loader=flexible_footprint_loader_total,
         measurement_file_city=EXAMPLE_DIRECTORY_2
@@ -735,17 +766,18 @@ def measurement_loader_total_and_weekly_co2_ff(
         / "remapped_data"
         / "germany"
         / "total_measurements.nc",
-        measurement_file_weekly_co2_ff=EXAMPLE_DIRECTORY_2
+        measurement_file_co2_ff=EXAMPLE_DIRECTORY_2
         / "remapped_data"
         / "city"
-        / "weekly_co2_ff_measurements.nc",
+        / "co2_ff_measurements.nc",
     )
 
 
+# %% MEASUREMENT COVARIANCE LOADER FIXTURES
 @pytest.fixture
-def from_file_no_correlation_co2_ff(measurement_loader_total_and_weekly_co2_ff):
+def from_file_no_correlation_co2_ff(measurement_loader_total_and_co2_ff):
     return FromFileNoCorrelationCO2_ff(
-        measurement_loader=measurement_loader_total_and_weekly_co2_ff,
+        measurement_loader=measurement_loader_total_and_co2_ff,
         std_file=EXAMPLE_DIRECTORY_2
         / "remapped_data"
         / "city"
@@ -753,7 +785,7 @@ def from_file_no_correlation_co2_ff(measurement_loader_total_and_weekly_co2_ff):
         std_file_co2_ff=EXAMPLE_DIRECTORY_2
         / "remapped_data"
         / "city"
-        / "weekly_co2_ff_measurements_std.nc",
+        / "co2_ff_measurements_std.nc",
         ppm_error=2,
         ppm_error_co2_ff=4,
         add_quadratic=True,
