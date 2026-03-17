@@ -545,13 +545,80 @@ class FootprintLoaderTotalAndCO2_ff(FlexibleFootprintLoaderAnthBio):
             xr.DataArray: Footprint data with adjusted coordinates for the total
                  measurement to be compatible with the CO2 FF measurement.
         """
+        unnecessary_coordinates = [
+            "MTime_start",
+            "MTime_end",
+            "MPlace_x_east",
+            "MPlace_x_center",
+            "MPlace_x_west",
+            "MPlace_y_south",
+            "MPlace_y_center",
+            "MPlace_y_north",
+            "MPlace_z_bottom",
+            "MPlace_z_center",
+            "MPlace_z_top",
+            "MPlace_x_east",
+            "MPlace_x_center",
+            "MPlace_x_west",
+            "MPlace_y_south",
+            "MPlace_y_center",
+            "MPlace_y_north",
+            "MPlace_z_bottom",
+            "MPlace_z_center",
+            "MPlace_z_top",
+        ]
         new_measurement_coords = np.arange(footprint.measurement.size)
         mtimes = footprint.MTime.values
         mplaces = footprint.MPlace.values
+        for coord in unnecessary_coordinates:
+            if coord in footprint.coords:
+                footprint = footprint.drop_vars(coord)
         return footprint.assign_coords(
             measurement=new_measurement_coords,
             MTime=("measurement", mtimes),
             MPlace=("measurement", mplaces),
+        )
+
+    def _add_bio_sector_if_needed(
+        self,
+        footprint_co2_ff: xr.DataArray,
+        total_footprint_to_concatenate_with: xr.DataArray,
+    ) -> xr.DataArray:
+        """Adds sector dimension to `footprint_co2_ff` compatible with target DataArray.
+
+        Args:
+            footprint_co2_ff (xr.DataArray): Footprint data to be adjusted by adding
+                 sector dimension if needed. This footprint is expected to be unstacked
+                 in the `state` dimension.
+            total_footprint_to_concatenate_with (xr.DataArray): Footprint data that is
+                 used as target for concatenation and to determine the sectors to be
+                 added. This footprint is expected to be stacked in the `state` dimension.
+
+        Returns:
+            xr.DataArray: Footprint data with the added sector dimension.
+        """
+        sectors_to_add = []
+        target_sectors = np.unique(total_footprint_to_concatenate_with.sector.values)
+        if "sector" in footprint_co2_ff.dims:
+            sectors_to_add.extend(
+                list(
+                    set(np.unique(total_footprint_to_concatenate_with.sector.values))
+                    - set(np.unique(footprint_co2_ff.sector.values))
+                )
+            )
+        else:
+            footprint_co2_ff = footprint_co2_ff.expand_dims(
+                sector=[self.ant_sector_key]
+            )
+            sectors_to_add = list(set(target_sectors) - {self.ant_sector_key})
+        additional_footprint_data = []
+        for sector in sectors_to_add:
+            additional_footprint_data.append(
+                xr.zeros_like(footprint_co2_ff).assign_coords(sector=[sector])
+            )
+        return xr.concat(
+            [footprint_co2_ff, *additional_footprint_data],
+            dim="sector",
         )
 
     @staticmethod
@@ -594,18 +661,22 @@ class FootprintLoaderTotalAndCO2_ff(FlexibleFootprintLoaderAnthBio):
     def footprint(self):
         if self._combined_footprint is None:
             total_footprint = self._adjust_total_measurement_coords(super().footprint)
-            co2_ff = self._adjust_co2_ff_measurement_coords(
-                self._combine_subsectors(
-                    self._open_and_prepare(self._footprint_file_city_co2_ff)[
-                        self._weekly_co2_ff_sector_key
-                    ],
-                    self._open_and_prepare(self._footprint_file_germany_co2_ff)[
-                        self._weekly_co2_ff_sector_key
-                    ],
+            co2_ff = self._add_bio_sector_if_needed(
+                self._adjust_co2_ff_measurement_coords(
+                    self._combine_subsectors(
+                        self._open_and_prepare(self._footprint_file_city_co2_ff)[
+                            self._weekly_co2_ff_sector_key
+                        ],
+                        self._open_and_prepare(self._footprint_file_germany_co2_ff)[
+                            self._weekly_co2_ff_sector_key
+                        ],
+                    ),
+                    total_footprint.sizes["measurement"],
+                    self.CO2_FF_MPLACE_NAME,
                 ),
-                total_footprint.sizes["measurement"],
-                self.CO2_FF_MPLACE_NAME,
+                total_footprint,
             ).stack(state=self.STATE_DIMS)
+
             self._combined_footprint = (
                 xr.concat([total_footprint, co2_ff], dim="measurement")
                 .astype(FLOAT_PRECISION)

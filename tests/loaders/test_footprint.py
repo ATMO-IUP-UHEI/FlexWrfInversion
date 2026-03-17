@@ -121,8 +121,8 @@ class Test_FootprintLoaderTotalAndCO2_ff:
     ):
         footprint = footprint_loader_total_and_co2_ff.footprint
         original_city_footprint = xr.open_dataset(
-            footprint_loader_total_and_co2_ff._footprint_file_city_bio
-        )[footprint_loader_total_and_co2_ff.bio_sector_key]
+            footprint_loader_total_and_co2_ff._footprint_file_city_ant
+        )[footprint_loader_total_and_co2_ff.ant_sector_key]
         original_city_footprint_co2_ff = xr.open_dataset(
             footprint_loader_total_and_co2_ff._footprint_file_city_co2_ff
         )[footprint_loader_total_and_co2_ff._weekly_co2_ff_sector_key]
@@ -143,7 +143,7 @@ class Test_FootprintLoaderTotalAndCO2_ff:
         mplace = original_city_footprint.MPlace[3].values
         mtime = original_city_footprint.MTime[2].values
         subsector = original_city_footprint.subsector[1].values
-        sector = "E_CO2_VPRM"
+        sector = footprint_loader_total_and_co2_ff.ant_sector_key
         time = original_city_footprint.Time[0].values
         mtime_co2_ff = original_city_footprint_co2_ff.MTime[1].values
         mplace_co2_ff = FootprintLoaderTotalAndCO2_ff.CO2_FF_MPLACE_NAME.encode()
@@ -168,7 +168,6 @@ class Test_FootprintLoaderTotalAndCO2_ff:
             original_city_footprint_co2_ff.sel(
                 measurement_id=original_city_footprint_co2_ff.MTime == mtime_co2_ff,
                 subsector=subsector,
-                sector=sector,
                 Time=time,
             ).item(),
             footprint.sel(
@@ -185,6 +184,29 @@ class Test_FootprintLoaderTotalAndCO2_ff:
             atol=0,
             rtol=1e-6,
         )
+        assert (
+            xr.zeros_like(
+                footprint.sel(
+                    measurement=(
+                        (footprint.MPlace == mplace_co2_ff)
+                        & (footprint.MTime == mtime_co2_ff)
+                    ),
+                    state=(
+                        footprint.sector
+                        == footprint_loader_total_and_co2_ff.ant_sector_key
+                    ),
+                )
+            )
+            == footprint.sel(
+                measurement=(
+                    (footprint.MPlace == mplace_co2_ff)
+                    & (footprint.MTime == mtime_co2_ff)
+                ),
+                state=(
+                    footprint.sector == footprint_loader_total_and_co2_ff.bio_sector_key
+                ),
+            )
+        ).all()
 
     def test_load_timeframe(self, footprint_loader_total_and_co2_ff):
         footprint = footprint_loader_total_and_co2_ff.footprint
@@ -235,3 +257,34 @@ class Test_FootprintLoaderTotalAndCO2_ff:
         )
         for variable in ["MTime", "MPlace", "measurement"]:
             assert (measurements[variable].values == footprint[variable].values).all()
+
+    def test_add_bio_sector_if_needed(self, footprint_loader_total_and_co2_ff):
+        fp_loader = footprint_loader_total_and_co2_ff
+        total_footprint = fp_loader._adjust_total_measurement_coords(
+            super(FootprintLoaderTotalAndCO2_ff, fp_loader).footprint
+        )
+        co2_ff = fp_loader._adjust_co2_ff_measurement_coords(
+            fp_loader._combine_subsectors(
+                fp_loader._open_and_prepare(fp_loader._footprint_file_city_co2_ff)[
+                    fp_loader._weekly_co2_ff_sector_key
+                ],
+                fp_loader._open_and_prepare(fp_loader._footprint_file_germany_co2_ff)[
+                    fp_loader._weekly_co2_ff_sector_key
+                ],
+            ),
+            total_footprint.sizes["measurement"],
+            fp_loader.CO2_FF_MPLACE_NAME,
+        )
+        new_ff_footprint = fp_loader._add_bio_sector_if_needed(co2_ff, total_footprint)
+        stacked_new_ff_footprint = new_ff_footprint.stack(state=fp_loader.STATE_DIMS)
+        assert set(total_footprint.sector.values) == set(new_ff_footprint.sector.values)
+        assert (
+            stacked_new_ff_footprint.state.values == total_footprint.state.values
+        ).all()
+        assert (
+            stacked_new_ff_footprint.subsector.values
+            == total_footprint.subsector.values
+        ).all()
+        assert (
+            stacked_new_ff_footprint.Time.values == total_footprint.Time.values
+        ).all()

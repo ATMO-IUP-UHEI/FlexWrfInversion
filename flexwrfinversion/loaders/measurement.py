@@ -500,9 +500,34 @@ class MeasurementLoaderTotalAndCO2_ff(FlexibleMeasurementLoaderTotal):
         Returns:
             xr.DataArray: Total CO2 measurements with adjusted coordinates.
         """
+        unnecessary_coordinates = [
+            "MTime_start",
+            "MTime_end",
+            "MPlace_x_east",
+            "MPlace_x_center",
+            "MPlace_x_west",
+            "MPlace_y_south",
+            "MPlace_y_center",
+            "MPlace_y_north",
+            "MPlace_z_bottom",
+            "MPlace_z_center",
+            "MPlace_z_top",
+            "MPlace_x_east",
+            "MPlace_x_center",
+            "MPlace_x_west",
+            "MPlace_y_south",
+            "MPlace_y_center",
+            "MPlace_y_north",
+            "MPlace_z_bottom",
+            "MPlace_z_center",
+            "MPlace_z_top",
+        ]
         new_measurement_coords = np.arange(total_measurements.measurement.size)
         mtimes = total_measurements.MTime.values
         mplaces = total_measurements.MPlace.values
+        for coord in unnecessary_coordinates:
+            if coord in total_measurements.coords:
+                total_measurements = total_measurements.drop_vars(coord)
         return total_measurements.assign_coords(
             measurement=new_measurement_coords,
             MTime=("measurement", mtimes),
