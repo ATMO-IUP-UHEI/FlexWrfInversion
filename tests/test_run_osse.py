@@ -195,8 +195,26 @@ def test_format_results():
 
 def test_prepare_permutations(flexible_measurement_loader_total):
     config = {"n_permutations": 3, "n_stations": 1, "permutation_seed": 42}
-    mplace_value_permutaitons = _prepare_permutations(
+    mplace_value_permutations = _prepare_permutations(
         config, flexible_measurement_loader_total
     )
-    assert len(mplace_value_permutaitons) == 3
-    assert len(mplace_value_permutaitons[0]) == 1
+    assert len(mplace_value_permutations) == 3
+    assert len(mplace_value_permutations[0]) == 1
+
+
+def test_prepare_permutations_with_co2_ff(measurement_loader_total_and_co2_ff):
+    config = {"n_permutations": 3, "n_stations": 1, "permutation_seed": 42}
+    mplace_value_permutations = _prepare_permutations(
+        config, measurement_loader_total_and_co2_ff
+    )
+    assert len(mplace_value_permutations) == 3
+    assert len(mplace_value_permutations[0]) == 2
+    for permutation in mplace_value_permutations:
+        assert (
+            measurement_loader_total_and_co2_ff.CO2_FF_MPLACE_NAME.encode()
+            in permutation
+        )
+        assert (
+            permutation
+            == measurement_loader_total_and_co2_ff.CO2_FF_MPLACE_NAME.encode()
+        ).sum() <= 1

@@ -50,12 +50,14 @@ from flexwrfinversion.loaders.footprint import (
     FlexibleFootprintLoaderAnthBioCo,
     FlexibleFootprintLoaderTotal,
     FootprintLoader,
+    FootprintLoaderTotalAndCO2_ff,
 )
 from flexwrfinversion.loaders.measurement import (
     FlexibleMeasurementLoaderTotal,
     FlexibleMeasurementLoaderTotalCo,
     MeasurementLoader,
     MeasurementLoaderFromSingleFileTotal,
+    MeasurementLoaderTotalAndCO2_ff,
 )
 from flexwrfinversion.loaders.measurement_covariance import (
     ConstantNoCorrelation,
@@ -63,6 +65,7 @@ from flexwrfinversion.loaders.measurement_covariance import (
     ConstantPlusRelativeNoCorrelation,
     FromFileNoCorrelation,
     FromFileNoCorrelationCO,
+    FromFileNoCorrelationCO2_ff,
     MeasurementCovarianceLoader,
 )
 from flexwrfinversion.loaders.prior import (
@@ -310,7 +313,14 @@ def _run_inversion(
     Returns:
         xr.Dataset: Inversion result.
     """
-    site_selection = measurement_loader.measurements.unstack().MPlace.isin(sites)
+    if isinstance(measurement_loader, MeasurementLoaderTotalAndCO2_ff):
+        all_measurement_sites = np.unique(measurement_loader.measurements.MPlace.values)
+        site_selection = xr.DataArray(
+            np.isin(all_measurement_sites, sites),
+            coords={"MPlace": all_measurement_sites},
+        )
+    else:
+        site_selection = measurement_loader.measurements.unstack().MPlace.isin(sites)
 
     # Initialize lists to save results
     prior_std = []
@@ -433,14 +443,27 @@ def _prepare_permutations(config: dict, measurement_loader: MeasurementLoader) -
         global_state = np.random.get_state()
         np.random.seed(config["permutation_seed"])
 
+    all_mplace_values = np.unique(measurement_loader.measurements.MPlace.values)
+    if isinstance(measurement_loader, MeasurementLoaderTotalAndCO2_ff):
+        # drop MeasurementLoaderTotalAndCO2_ff.CO2_FF_MPLACE_NAME from the list
+        all_mplace_values = all_mplace_values[
+            all_mplace_values != measurement_loader.CO2_FF_MPLACE_NAME.encode()
+        ]
+
     mplace_value_permutations = [
         np.random.choice(
-            measurement_loader.measurements.unstack().MPlace,
+            all_mplace_values,
             config["n_stations"],
             replace=False,
         )
         for _ in range(config["n_permutations"])
     ]
+
+    if isinstance(measurement_loader, MeasurementLoaderTotalAndCO2_ff):
+        mplace_value_permutations = [
+            np.append(permutation, measurement_loader.CO2_FF_MPLACE_NAME.encode())
+            for permutation in mplace_value_permutations
+        ]
 
     if "permutation_seed" in config:
         np.random.set_state(global_state)

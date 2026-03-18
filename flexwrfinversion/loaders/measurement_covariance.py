@@ -360,17 +360,39 @@ class FromFileNoCorrelationCO2_ff(FromFileNoCorrelation):
             xr.DataArray: The covariance as 2D array. Coordinates should be stacked
                 beforehand.
         """
-        subset_stds = self.std.sel(
-            measurement=(
-                (self.std.MTime >= start_time)
-                & (self.std.MTime <= end_time)
-                & self.std.MPlace.isin(
-                    np.unique(self.measurement_loader.measurements.MPlace.values)
-                )
+        measurement_subset = self.measurement_loader.load_timeframe(
+            start_time, end_time
+        )
+        no_ff_measurement_subset = measurement_subset.sel(
+            measurement=~measurement_subset.measurement.MPlace.isin(
+                [self.measurement_loader.CO2_FF_MPLACE_NAME.encode()]
             )
         )
+        ff_measurement_subset = measurement_subset.sel(
+            measurement=measurement_subset.measurement.MPlace.isin(
+                [self.measurement_loader.CO2_FF_MPLACE_NAME.encode()]
+            )
+        )
+        no_ff_std_subset = self.std.sel(
+            measurement=(
+                self.std.MTime.isin(np.unique(no_ff_measurement_subset.MTime.values))
+                & self.std.MPlace.isin(
+                    np.unique(no_ff_measurement_subset.MPlace.values)
+                )
+            )
+        ).assign_coords(measurement=no_ff_measurement_subset.measurement)
+        ff_std_subset = self.std.sel(
+            measurement=(
+                self.std.MTime.isin(np.unique(ff_measurement_subset.MTime.values))
+                & self.std.MPlace.isin(np.unique(ff_measurement_subset.MPlace.values))
+            )
+        ).assign_coords(measurement=ff_measurement_subset.measurement)
+        std_subset = xr.concat(
+            [no_ff_std_subset, ff_std_subset], dim="measurement"
+        ).sortby("measurement")
+
         covariance = (
-            xr.zeros_like(self._to_two_dimensions(subset_stds))
-            + np.diag(subset_stds.values) ** 2
+            xr.zeros_like(self._to_two_dimensions(std_subset))
+            + np.diag(std_subset.values) ** 2
         )
         return covariance

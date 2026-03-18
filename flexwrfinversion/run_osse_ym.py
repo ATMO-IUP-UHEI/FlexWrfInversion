@@ -47,7 +47,10 @@ from tqdm.auto import tqdm
 
 # flake8: noqa: F401
 from flexwrfinversion.loaders.footprint import FootprintLoader
-from flexwrfinversion.loaders.measurement import MeasurementLoader
+from flexwrfinversion.loaders.measurement import (
+    MeasurementLoader,
+    MeasurementLoaderTotalAndCO2_ff,
+)
 from flexwrfinversion.loaders.measurement_bias import (
     ConstantBias,
     ConstantPlusRandomBias,
@@ -153,7 +156,12 @@ def _run_inversion_ym_with_globals(
 
     np.random.seed(int((os.getpid() * int(time.time_ns())) % 2**32))
 
-    site_selection = measurements.unstack().MPlace.isin(sites)
+    all_measurement_sites = np.unique(measurements.MPlace.values)
+    site_selection = xr.DataArray(
+        np.isin(all_measurement_sites, sites),
+        coords={"MPlace": all_measurement_sites},
+    )
+
     (
         measurements_subset,
         measurement_covariance_subset,
@@ -391,8 +399,8 @@ def _load_inversion_data(
     measurements = measurement_loader.measurements.astype(FLOAT_PRECISION).copy()
     measurement_covariance = (
         measurement_covariance_loader.load_timeframe(
-            measurement_loader.measurements.MTime[0],
-            measurement_loader.measurements.MTime[-1],
+            measurement_loader.measurements.MTime.min().values,
+            measurement_loader.measurements.MTime.max().values,
         )
         .astype(FLOAT_PRECISION)
         .copy()
@@ -572,20 +580,25 @@ def main(args):
 
     # If save measurements is set, save the measurements and the standard deviations
     if "save_concentrations" in config and config["save_concentrations"]:
-        measurement_save_name = (
-            output_dir / f"{output_name.split('.')[0]}_measurements.nc"
-        )
-        measurement_dataset = xr.Dataset(
-            {
-                "measurements": measurements,
-                "measurement_stds": xr.DataArray(
-                    np.diag(measurement_covariance.values) ** 0.5,
-                    coords=measurements.coords,
-                ),
-            },
-        ).unstack()
-        logger.info(f"Saving measurements to {measurement_save_name}")
-        measurement_dataset.to_netcdf(measurement_save_name)
+        if isinstance(measurement_loader, MeasurementLoaderTotalAndCO2_ff):
+            logger.warning(
+                "Saving measurements is not supported for MeasurementLoaderTotalAndCO2_ff, skipping."
+            )
+        else:
+            measurement_save_name = (
+                output_dir / f"{output_name.split('.')[0]}_measurements.nc"
+            )
+            measurement_dataset = xr.Dataset(
+                {
+                    "measurements": measurements,
+                    "measurement_stds": xr.DataArray(
+                        np.diag(measurement_covariance.values) ** 0.5,
+                        coords=measurements.coords,
+                    ),
+                },
+            ).unstack()
+            logger.info(f"Saving measurements to {measurement_save_name}")
+            measurement_dataset.to_netcdf(measurement_save_name)
     logger.success("OSSE complete")
 
 
