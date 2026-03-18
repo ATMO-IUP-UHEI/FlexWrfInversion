@@ -361,7 +361,13 @@ class FromFileNoCorrelationCO2_ff(FromFileNoCorrelation):
                 beforehand.
         """
         subset_stds = self.std.sel(
-            measurement=(self.std.MTime >= start_time) * (self.std.MTime <= end_time)
+            measurement=(
+                (self.std.MTime >= start_time)
+                & (self.std.MTime <= end_time)
+                & self.std.MPlace.isin(
+                    np.unique(self.measurement_loader.measurements.MPlace.values)
+                )
+            )
         )
         covariance = (
             xr.zeros_like(self._to_two_dimensions(subset_stds))
