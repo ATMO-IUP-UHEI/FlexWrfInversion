@@ -2,7 +2,12 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from flexwrfinversion.loaders.prior_covariance import RelativeError
+from flexwrfinversion.loaders.prior_covariance import (
+    DifferenceOfPriorToTargetMinimumFromFile,
+    DifferenceOfPriorToTargetMinimumFromFile_Scalable,
+    DifferenceOfPriorToTargetMinimumFromFile_ScalableFromMean,
+    RelativeError,
+)
 
 
 class Test_RelativeError:
@@ -272,3 +277,168 @@ class Test_DifferenceOfPriorToTargetMinimumFromFile:
         assert (minimum_error == abs_diff.mean()).all()
         assert minimum_error.dims == target.dims
         assert minimum_error.shape == target.shape
+
+
+class Test_DifferenceOfPriorToTargetMinimumFromFile_Scalable:
+    def _write_minimum_error_file(self, tmp_path, flat_prior):
+        minimum_file = tmp_path / "minimum_error.nc"
+        target = flat_prior.target_loader.target.unstack()
+        prior = flat_prior.prior.unstack()
+        abs_diff = np.abs(target - prior)
+        (xr.ones_like(target) * abs_diff.mean().item()).to_netcdf(minimum_file)
+        return minimum_file
+
+    def test_prior_std_scale_zero_matches_base(self, tmp_path, flat_prior):
+        minimum_file = self._write_minimum_error_file(tmp_path, flat_prior)
+        base = DifferenceOfPriorToTargetMinimumFromFile(
+            prior_loader=flat_prior,
+            minimum_error_file=minimum_file,
+        )
+        scalable = DifferenceOfPriorToTargetMinimumFromFile_Scalable(
+            prior_loader=flat_prior,
+            minimum_error_file=minimum_file,
+            flat_component_scale=0.0,
+        )
+        assert np.allclose(scalable.prior_std, base.prior_std)
+
+    def test_prior_std_scale_one_flattens_subsector(self, tmp_path, flat_prior):
+        minimum_file = self._write_minimum_error_file(tmp_path, flat_prior)
+        base = DifferenceOfPriorToTargetMinimumFromFile(
+            prior_loader=flat_prior,
+            minimum_error_file=minimum_file,
+        )
+        scalable = DifferenceOfPriorToTargetMinimumFromFile_Scalable(
+            prior_loader=flat_prior,
+            minimum_error_file=minimum_file,
+            flat_component_scale=1.0,
+        )
+
+        base_unstacked = base.prior_std.unstack()
+        scalable_unstacked = scalable.prior_std.unstack()
+
+        assert "subsector" in scalable_unstacked.dims
+        assert scalable_unstacked.std("subsector").fillna(0).max().item() == 0
+
+        expected_mean = base_unstacked.mean("subsector")
+        expected_flat = expected_mean.broadcast_like(base_unstacked)
+        assert np.allclose(scalable_unstacked, expected_flat)
+
+    def test_flat_subsectors_only_affects_subset(self, tmp_path, flat_prior):
+        minimum_file = self._write_minimum_error_file(tmp_path, flat_prior)
+        base = DifferenceOfPriorToTargetMinimumFromFile(
+            prior_loader=flat_prior,
+            minimum_error_file=minimum_file,
+        )
+
+        subsectors = list(base.prior_std.unstack().subsector.values)
+        assert len(subsectors) >= 2
+        subset = subsectors[:2]
+
+        scalable = DifferenceOfPriorToTargetMinimumFromFile_Scalable(
+            prior_loader=flat_prior,
+            minimum_error_file=minimum_file,
+            flat_component_scale=1.0,
+            flat_subsectors=repr(subset),
+        )
+
+        base_unstacked = base.prior_std.unstack()
+        scalable_unstacked = scalable.prior_std.unstack()
+
+        expected_mean_subset = base_unstacked.sel(subsector=subset).mean("subsector")
+        expected_flat_subset = expected_mean_subset.broadcast_like(
+            base_unstacked.sel(subsector=subset)
+        )
+
+        assert np.allclose(
+            scalable_unstacked.sel(subsector=subset),
+            expected_flat_subset,
+        )
+
+        remaining = [s for s in subsectors if s not in subset]
+        assert np.allclose(
+            scalable_unstacked.sel(subsector=remaining),
+            base_unstacked.sel(subsector=remaining),
+        )
+
+
+class Test_DifferenceOfPriorToTargetMinimumFromFile_ScalableFromMean:
+    def _write_minimum_error_file(self, tmp_path, flat_prior):
+        minimum_file = tmp_path / "minimum_error.nc"
+        target = flat_prior.target_loader.target.unstack()
+        prior = flat_prior.prior.unstack()
+        abs_diff = np.abs(target - prior)
+        (xr.ones_like(target) * abs_diff.mean().item()).to_netcdf(minimum_file)
+        return minimum_file
+
+    def test_prior_std_scale_zero_matches_base(self, tmp_path, flat_prior):
+        minimum_file = self._write_minimum_error_file(tmp_path, flat_prior)
+        base = DifferenceOfPriorToTargetMinimumFromFile(
+            prior_loader=flat_prior,
+            minimum_error_file=minimum_file,
+        )
+        scalable = DifferenceOfPriorToTargetMinimumFromFile_ScalableFromMean(
+            prior_loader=flat_prior,
+            minimum_error_file=minimum_file,
+            flat_component_scale=0.0,
+        )
+        assert np.allclose(scalable.prior_std, base.prior_std)
+
+    def test_prior_std_scale_one_flattens_sector(self, tmp_path, flat_prior):
+        minimum_file = self._write_minimum_error_file(tmp_path, flat_prior)
+        base = DifferenceOfPriorToTargetMinimumFromFile(
+            prior_loader=flat_prior,
+            minimum_error_file=minimum_file,
+        )
+        scalable = DifferenceOfPriorToTargetMinimumFromFile_ScalableFromMean(
+            prior_loader=flat_prior,
+            minimum_error_file=minimum_file,
+            flat_component_scale=1.0,
+        )
+
+        base_unstacked = base.prior_std.unstack()
+        scalable_unstacked = scalable.prior_std.unstack()
+
+        assert "sector" in base_unstacked.dims
+        assert "sector" in scalable_unstacked.dims
+
+        expected_mean = base_unstacked.mean("sector")
+        expected_flat = expected_mean.broadcast_like(base_unstacked)
+
+        assert np.allclose(scalable_unstacked, expected_flat)
+        assert scalable_unstacked.std("sector").fillna(0).max().item() == 0
+
+    def test_flat_subsectors_only_affects_subset(self, tmp_path, flat_prior):
+        minimum_file = self._write_minimum_error_file(tmp_path, flat_prior)
+        base = DifferenceOfPriorToTargetMinimumFromFile(
+            prior_loader=flat_prior,
+            minimum_error_file=minimum_file,
+        )
+
+        base_unstacked = base.prior_std.unstack()
+        subsectors = list(base_unstacked.subsector.values)
+        assert len(subsectors) >= 2
+        subset = subsectors[:2]
+
+        scalable = DifferenceOfPriorToTargetMinimumFromFile_ScalableFromMean(
+            prior_loader=flat_prior,
+            minimum_error_file=minimum_file,
+            flat_component_scale=1.0,
+            flat_subsectors=repr(subset),
+        )
+
+        scalable_unstacked = scalable.prior_std.unstack()
+
+        expected_mean_subset = base_unstacked.sel(subsector=subset).mean("sector")
+        expected_flat_subset = expected_mean_subset.broadcast_like(
+            base_unstacked.sel(subsector=subset)
+        )
+        assert np.allclose(
+            scalable_unstacked.sel(subsector=subset),
+            expected_flat_subset,
+        )
+
+        remaining = [s for s in subsectors if s not in subset]
+        assert np.allclose(
+            scalable_unstacked.sel(subsector=remaining),
+            base_unstacked.sel(subsector=remaining),
+        )

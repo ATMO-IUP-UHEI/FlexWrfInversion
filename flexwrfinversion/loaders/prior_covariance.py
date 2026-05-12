@@ -483,3 +483,282 @@ class DifferenceOfPriorToTargetMinimumFromFile(PriorCovarianceLoader):
                     self._prior_std,
                 )
         return self._prior_std
+
+
+class DifferenceOfPriorToTargetMinimumFromFile_Scalable(
+    DifferenceOfPriorToTargetMinimumFromFile
+):
+    def __init__(
+        self,
+        prior_loader: PriorLoader,
+        minimum_error_file: str | Path = None,
+        spatial_correlation_path: str | Path = None,
+        temporal_correlation_path: str | Path = None,
+        flat_component_scale: float = 1.0,
+        flat_subsectors: str = None,
+    ):
+        """Use target values as std for the covariance. Cannot use correlation.
+
+        Args:
+            prior_loader (PriorLoader): Prior loader of the inversion.
+            minimum_error (float, optional): Minimal error to allow. Defaults to None.
+            spatial_correlation_path (str | Path, optional): Path to the spatial
+                correlation to be used. Defaults to None.
+            temporal_correlation_path (str | Path, optional): Path to the temporal
+                correlation to be used. Defaults to None.
+            flat_component_scale (float, optional): Scale factor determining how close the
+                covariance is to a flat distribution. Defaults to 1.0.
+            flat_subsectors (str, optional): Subsectors to which the flat distribution
+                should be applied. Is piped to `eval()`. Defaults to None, which means
+                that the flat distribution is applied to all subsectors.
+        """
+        super().__init__(
+            prior_loader=prior_loader,
+            minimum_error_file=minimum_error_file,
+            spatial_correlation_path=spatial_correlation_path,
+            temporal_correlation_path=temporal_correlation_path,
+        )
+        self._flat_component_scale = flat_component_scale
+        self._flat_subsectors = flat_subsectors
+
+    @property
+    def prior_std(self) -> xr.DataArray:
+        if self._prior_std is None:
+            self._prior_std = np.abs(
+                self.prior_loader.prior - self.prior_loader.target_loader.target
+            )
+            if self.minimum_error is not None:
+                self._prior_std = xr.where(
+                    self._prior_std < self.minimum_error,
+                    self.minimum_error,
+                    self._prior_std,
+                )
+            if self._flat_component_scale != 0:
+                original_state_index = self._prior_std.state
+                original_unstacked = self._prior_std.unstack()
+                if "subsector" in original_unstacked.dims:
+                    subsectors_to_flatten = list(original_unstacked.subsector.values)
+                    if self._flat_subsectors is not None:
+                        subsectors_to_flatten = eval(self._flat_subsectors)
+
+                    flat_component_value = original_unstacked.sel(
+                        subsector=subsectors_to_flatten
+                    ).mean()
+                    flat_unstacked = xr.where(
+                        self._prior_std.subsector.unstack().isin(subsectors_to_flatten),
+                        flat_component_value,
+                        original_unstacked,
+                    )
+                    mixed = (
+                        original_unstacked * (1 - self._flat_component_scale)
+                        + flat_unstacked * self._flat_component_scale
+                    )
+                    self._prior_std = mixed.stack(
+                        state=self.prior_loader.target_loader.STATE_DIMS
+                    ).sel(state=original_state_index)
+        return self._prior_std
+
+
+class DifferenceOfPriorToTargetMinimumFromFile_ScalableFromMean(
+    DifferenceOfPriorToTargetMinimumFromFile
+):
+    def __init__(
+        self,
+        prior_loader: PriorLoader,
+        minimum_error_file: str | Path = None,
+        spatial_correlation_path: str | Path = None,
+        temporal_correlation_path: str | Path = None,
+        flat_component_scale: float = 1.0,
+        flat_subsectors: str = None,
+    ):
+        """Use target values as std for the covariance. Cannot use correlation.
+
+        Args:
+            prior_loader (PriorLoader): Prior loader of the inversion.
+            minimum_error (float, optional): Minimal error to allow. Defaults to None.
+            spatial_correlation_path (str | Path, optional): Path to the spatial
+                correlation to be used. Defaults to None.
+            temporal_correlation_path (str | Path, optional): Path to the temporal
+                correlation to be used. Defaults to None.
+            flat_component_scale (float, optional): Scale factor determining how close the
+                covariance is to a flat distribution. Defaults to 1.0.
+            flat_subsectors (str, optional): Subsectors to which the flat distribution
+                should be applied. Is piped to `eval()`. Defaults to None, which means
+                that the flat distribution is applied to all subsectors.
+        """
+        super().__init__(
+            prior_loader=prior_loader,
+            minimum_error_file=minimum_error_file,
+            spatial_correlation_path=spatial_correlation_path,
+            temporal_correlation_path=temporal_correlation_path,
+        )
+        self._flat_component_scale = flat_component_scale
+        self._flat_subsectors = flat_subsectors
+
+    @property
+    def prior_std(self) -> xr.DataArray:
+        if self._prior_std is None:
+            self._prior_std = np.abs(
+                self.prior_loader.prior - self.prior_loader.target_loader.target
+            )
+            if self.minimum_error is not None:
+                self._prior_std = xr.where(
+                    self._prior_std < self.minimum_error,
+                    self.minimum_error,
+                    self._prior_std,
+                )
+            if self._flat_component_scale != 0:
+                original_state_index = self._prior_std.state
+                original_unstacked = self._prior_std.unstack()
+                if "subsector" in original_unstacked.dims:
+                    subsectors_to_flatten = list(original_unstacked.subsector.values)
+                    if self._flat_subsectors is not None:
+                        subsectors_to_flatten = eval(self._flat_subsectors)
+
+                    flat_prior_std = (
+                        original_unstacked.mean("sector")
+                        .expand_dims(sector=original_unstacked.sector.values)
+                        .transpose(*original_unstacked.dims)
+                    )
+                    flat_unstacked = xr.where(
+                        self._prior_std.subsector.unstack().isin(subsectors_to_flatten),
+                        flat_prior_std,
+                        original_unstacked,
+                    )
+                    mixed = (
+                        original_unstacked * (1 - self._flat_component_scale)
+                        + flat_unstacked * self._flat_component_scale
+                    )
+                    self._prior_std = mixed.stack(
+                        state=self.prior_loader.target_loader.STATE_DIMS
+                    ).sel(state=original_state_index)
+        return self._prior_std
+
+
+class DifferenceOfPriorToTargetMinimumFromFile_ScalableFromMax(
+    DifferenceOfPriorToTargetMinimumFromFile
+):
+    def __init__(
+        self,
+        prior_loader: PriorLoader,
+        minimum_error_file: str | Path = None,
+        spatial_correlation_path: str | Path = None,
+        temporal_correlation_path: str | Path = None,
+        flat_component_scale: float = 1.0,
+        flat_subsectors: str = None,
+    ):
+        """Use target values as std for the covariance. Cannot use correlation.
+
+        Args:
+            prior_loader (PriorLoader): Prior loader of the inversion.
+            minimum_error (float, optional): Minimal error to allow. Defaults to None.
+            spatial_correlation_path (str | Path, optional): Path to the spatial
+                correlation to be used. Defaults to None.
+            temporal_correlation_path (str | Path, optional): Path to the temporal
+                correlation to be used. Defaults to None.
+            flat_component_scale (float, optional): Scale factor determining how close the
+                covariance is to a flat distribution. Defaults to 1.0.
+            flat_subsectors (str, optional): Subsectors to which the flat distribution
+                should be applied. Is piped to `eval()`. Defaults to None, which means
+                that the flat distribution is applied to all subsectors.
+        """
+        super().__init__(
+            prior_loader=prior_loader,
+            minimum_error_file=minimum_error_file,
+            spatial_correlation_path=spatial_correlation_path,
+            temporal_correlation_path=temporal_correlation_path,
+        )
+        self._flat_component_scale = flat_component_scale
+        self._flat_subsectors = flat_subsectors
+
+    @property
+    def prior_std(self) -> xr.DataArray:
+        if self._prior_std is None:
+            self._prior_std = np.abs(
+                self.prior_loader.prior - self.prior_loader.target_loader.target
+            )
+            if self.minimum_error is not None:
+                self._prior_std = xr.where(
+                    self._prior_std < self.minimum_error,
+                    self.minimum_error,
+                    self._prior_std,
+                )
+            if self._flat_component_scale != 0:
+                original_state_index = self._prior_std.state
+                original_unstacked = self._prior_std.unstack()
+                if "subsector" in original_unstacked.dims:
+                    subsectors_to_flatten = list(original_unstacked.subsector.values)
+                    if self._flat_subsectors is not None:
+                        subsectors_to_flatten = eval(self._flat_subsectors)
+
+                    flat_prior_std = (
+                        original_unstacked.max("sector")
+                        .expand_dims(sector=original_unstacked.sector.values)
+                        .transpose(*original_unstacked.dims)
+                    )
+                    flat_unstacked = xr.where(
+                        self._prior_std.subsector.unstack().isin(subsectors_to_flatten),
+                        flat_prior_std,
+                        original_unstacked,
+                    )
+                    mixed = (
+                        original_unstacked * (1 - self._flat_component_scale)
+                        + flat_unstacked * self._flat_component_scale
+                    )
+                    self._prior_std = mixed.stack(
+                        state=self.prior_loader.target_loader.STATE_DIMS
+                    ).sel(state=original_state_index)
+        return self._prior_std
+
+
+class DifferenceOfPriorToTargetMinimumFromFile_DEBUG(PriorCovarianceLoader):
+    def __init__(
+        self,
+        prior_loader: PriorLoader,
+        minimum_error_file: str | Path = None,
+        spatial_correlation_path: str | Path = None,
+        temporal_correlation_path: str | Path = None,
+    ):
+        """Use target values as std for the covariance. Cannot use correlation.
+
+        Args:
+            prior_loader (PriorLoader): Prior loader of the inversion.
+            minimum_error (float, optional): Minimal error to allow. Defaults to None.
+            spatial_correlation_path (str | Path, optional): Path to the spatial
+                correlation to be used. Defaults to None.
+            temporal_correlation_path (str | Path, optional): Path to the temporal
+                correlation to be used. Defaults to None.
+        """
+        super().__init__(prior_loader)
+        self._prior_std = None
+        self._minimum_error = None
+        self._minimum_error_file = minimum_error_file
+        self._spatial_correlation_path = spatial_correlation_path
+        self._temporal_correlation_path = temporal_correlation_path
+
+    @property
+    def minimum_error(self) -> xr.DataArray:
+        if self._minimum_error is None and self._minimum_error_file is not None:
+            self._minimum_error = xr.load_dataarray(self._minimum_error_file).stack(
+                state=self.prior_loader.target_loader.STATE_DIMS
+            )
+        return self._minimum_error
+
+    @property
+    def prior_std(self) -> xr.DataArray:
+        if self._prior_std is None:
+            self._prior_std = np.abs(
+                self.prior_loader.prior - self.prior_loader.target_loader.target
+            )
+            if self.minimum_error is not None:
+                self._prior_std = xr.where(
+                    self._prior_std < self.minimum_error,
+                    self.minimum_error,
+                    self._prior_std,
+                )
+            new_values = np.zeros_like(self._prior_std.values)
+            ant_values = self._prior_std.values[::2]
+            new_values[::2] = ant_values
+            new_values[1::2] = ant_values
+            self._prior_std.values = new_values
+        return self._prior_std
