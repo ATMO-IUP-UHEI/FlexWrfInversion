@@ -212,6 +212,7 @@ class PriorLoaderAnthBio_RelativeError_PointExtra(PriorLoader):
         anth_emission_error: float,
         bio_emission_error: float,
         point_emission_error: float,
+        unmodified_subsectors: str | None = None,
         ant_sector_key: str = "CO2_ANT_TOTAL",
         bio_sector_key: str = "E_CO2_VPRM",
         point_sector_key: str = "E_CO2TST",
@@ -226,6 +227,9 @@ class PriorLoaderAnthBio_RelativeError_PointExtra(PriorLoader):
         self._anth_emission_error = anth_emission_error
         self._bio_emission_error = bio_emission_error
         self._point_emission_error = point_emission_error
+        self._unmodified_subsectors = (
+            eval(unmodified_subsectors) if unmodified_subsectors is not None else None
+        )
         self.ant_sector_key = ant_sector_key
         self.bio_sector_key = bio_sector_key
         self.point_sector_key = point_sector_key
@@ -255,19 +259,41 @@ class PriorLoaderAnthBio_RelativeError_PointExtra(PriorLoader):
                 - point_emissions[self.point_sector_key]
             )
 
-            anth_emissions = (
+            modified_anth_emissions = (
                 reduced_anth_emissions
                 + self._anth_emission_error * np.abs(reduced_anth_emissions)
                 + point_emissions[self.point_sector_key]
                 + self._point_emission_error
                 * np.abs(point_emissions[self.point_sector_key])
             ).expand_dims(sector=[self.ant_sector_key])
-            bio_emissions = (
+
+            modified_bio_emissions = (
                 bio_emissions[self.bio_sector_key]
                 + self._bio_emission_error * np.abs(bio_emissions[self.bio_sector_key])
             ).expand_dims(sector=[self.bio_sector_key])
+
+            if self._unmodified_subsectors is not None:
+                unmodified_anth_mask = self._create_unmodified_mask(
+                    anth_emissions[self.ant_sector_key]
+                )
+                unmodified_bio_mask = self._create_unmodified_mask(
+                    bio_emissions[self.bio_sector_key]
+                )
+                modified_anth_emissions = xr.where(
+                    unmodified_anth_mask,
+                    anth_emissions[self.ant_sector_key],
+                    modified_anth_emissions,
+                )
+                modified_bio_emissions = xr.where(
+                    unmodified_bio_mask,
+                    bio_emissions[self.bio_sector_key],
+                    modified_bio_emissions,
+                )
+
             self._prior = (
-                xr.concat([anth_emissions, bio_emissions], dim="sector")
+                xr.concat(
+                    [modified_anth_emissions, modified_bio_emissions], dim="sector"
+                )
                 .rename("prior_emissions")
                 .sortby("sector")
                 .sortby("subsector")
@@ -285,6 +311,13 @@ class PriorLoaderAnthBio_RelativeError_PointExtra(PriorLoader):
             .sel(Time=slice(start_time, end_time))
             .stack(state=self.target_loader.STATE_DIMS)
         )
+
+    def _create_unmodified_mask(self, emissions: xr.DataArray) -> xr.DataArray:
+        if self._unmodified_subsectors is None:
+            return xr.full_like(emissions, False, dtype=bool)
+        else:
+            mask = xr.full_like(emissions, True, dtype=bool)
+            return mask.where(mask.subsector.isin(self._unmodified_subsectors), False)
 
 
 class PriorLoaderAnthBioCo_RelativeError_PointExtra(PriorLoader):

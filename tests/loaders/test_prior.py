@@ -105,6 +105,27 @@ class Test_PriorLoaderAnthBio_RelativeError_PointExtra:
             rtol=1e-3,
         )
 
+    def test_prior_with_unmodified_subsectors(
+        self, prior_loader_anth_bio_relative_error_point_extra
+    ):
+        subsector_not_to_modify = 156
+        prior_loader_anth_bio_relative_error_point_extra._unmodified_subsectors = (
+            np.array([subsector_not_to_modify])
+        )
+        prior = prior_loader_anth_bio_relative_error_point_extra.prior
+        target = prior_loader_anth_bio_relative_error_point_extra.target_loader.target
+        assert (
+            prior.sel(subsector=subsector_not_to_modify).values
+            == target.sel(subsector=subsector_not_to_modify).values
+        ).all()
+        non_zero_prior_modified = prior.where(
+            (prior.subsector != subsector_not_to_modify) & (target != 0), drop=True
+        )
+        non_zero_prior_modified_target = target.where(
+            (target.subsector != subsector_not_to_modify) & (target != 0), drop=True
+        )
+        assert (non_zero_prior_modified != non_zero_prior_modified_target).all()
+
 
 class Test_PriorLoaderAnthBioCo_RelativeError_PointExtra:
     def test_prior(self, prior_loader_anth_bio_co_relative_error_point_extra):
