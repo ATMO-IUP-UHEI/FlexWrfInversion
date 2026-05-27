@@ -53,6 +53,7 @@ from flexwrfinversion.loaders.measurement import (
 )
 from flexwrfinversion.loaders.measurement_bias import (
     ConstantBias,
+    ConstantBiasTotalOnly,
     ConstantPlusRandomBias,
     MeasurementBias,
     RandomStaticBias,

@@ -48,6 +48,47 @@ class ConstantBias(MeasurementBias):
         return xr.full_like(measurements, self.bias * 1e-6)
 
 
+class ConstantBiasTotalOnly(MeasurementBias):
+    def __init__(
+        self,
+        measurement_loader,
+        measurement_covariance_loader,
+        bias: float,
+        co2_ff_mplace_name: str = "co2_ff",
+    ):
+        """Constant bias that only applies to total CO2 measurements.
+
+        Args:
+            measurement_loader (MeasurementLoader): Measurement loader used in inversion.
+            measurement_covariance_loader (MeasurementCovarianceLoader): Measurement
+                covariance loader used in inversion.
+            bias (float): The constant bias to apply to total CO2 measurements.
+            co2_ff_mplace_name (str, optional): MPlace name used for CO2_ff measurements.
+                Defaults to "co2_ff".
+        """
+        super().__init__(measurement_loader, measurement_covariance_loader)
+        self.bias = bias
+        self.co2_ff_mplace_name = co2_ff_mplace_name
+
+    def set_bias(self):
+        pass
+
+    def generate_bias(self, measurements: xr.DataArray) -> xr.DataArray:
+        if "MPlace" not in measurements.coords:
+            return xr.full_like(measurements, self.bias * 1e-6)
+        mplace_name = self.co2_ff_mplace_name
+        if (
+            isinstance(mplace_name, str)
+            and measurements.MPlace.dtype.kind == "S"
+        ):
+            mplace_name = np.array(mplace_name, dtype="S")
+        return xr.where(
+            measurements.MPlace != mplace_name,
+            self.bias * 1e-6,
+            0.0,
+        )
+
+
 class RandomStaticBias(MeasurementBias):
     def __init__(
         self, measurement_loader, measurement_covariance_loader, standard_devition_ppm

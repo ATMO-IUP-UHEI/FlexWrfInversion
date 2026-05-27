@@ -3,6 +3,7 @@ import pytest
 
 from flexwrfinversion.loaders.measurement_bias import (
     ConstantBias,
+    ConstantBiasTotalOnly,
     ConstantPlusRandomBias,
     RandomStaticBias,
     RelativeBias,
@@ -30,6 +31,33 @@ class Test_ConstantBias:
         assert set(bias.dims) == set(measurements.dims)
         assert np.allclose(bias, 2e-6, atol=0)
         assert np.allclose(bias + measurements, measurements + 2e-6, atol=0)
+
+
+class Test_ConstantBiasTotalOnly:
+    def test_generate_bias(
+        self,
+        measurement_loader_total_and_co2_ff,
+        from_file_no_correlation_co2_ff,
+    ):
+        constant_bias = ConstantBiasTotalOnly(
+            measurement_loader=measurement_loader_total_and_co2_ff,
+            measurement_covariance_loader=from_file_no_correlation_co2_ff,
+            bias=2,
+        )
+        measurements = measurement_loader_total_and_co2_ff.measurements
+        bias = constant_bias.generate_bias(measurements)
+
+        assert bias.shape == measurements.shape
+        assert set(bias.dims) == set(measurements.dims)
+
+        co2_ff_name = measurement_loader_total_and_co2_ff.CO2_FF_MPLACE_NAME
+        if measurements.MPlace.dtype.kind == "S":
+            co2_ff_name = np.array(co2_ff_name, dtype="S")
+
+        co2_ff_mask = measurements.MPlace == co2_ff_name
+        assert bool(co2_ff_mask.any())
+        assert np.allclose(bias.where(co2_ff_mask, drop=True), 0.0, atol=0)
+        assert np.allclose(bias.where(~co2_ff_mask, drop=True), 2e-6, atol=0)
 
 
 class Test_RandomStaticBias:
